@@ -6,11 +6,12 @@ A web game that takes intelligence directly from models and converts it to actio
 
 1.  **Install Dependencies**:
     ```bash
-    pip install -r requirements.txt
+    python -m pip install -r requirements.txt
     ```
 
 2.  **Database**:
-    Ensure PostgreSQL is running. Update `.env` with your credentials.
+    Ensure PostgreSQL is running locally on port 5432.
+    Update `.env` if your credentials differ from the defaults (`postgres`/`password`).
     
     Initialize tables:
     ```bash
@@ -18,8 +19,9 @@ A web game that takes intelligence directly from models and converts it to actio
     ```
 
 3.  **Run Server**:
+    Use `uvicorn` via python module to avoid path issues:
     ```bash
-    uvicorn app.main:app --reload
+    python -m uvicorn app.main:app --reload
     ```
 
 ## API Usage
