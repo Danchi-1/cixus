@@ -93,9 +93,17 @@ const GameContainer = () => {
                 // Simulate the delay before confirming (visual only, backend already queued it)
                 setTimeout(() => {
                     const instruction = instructions[0];
-                    const feedback = instruction ?
-                        `CONFIRMED: ${instruction.action} -> ${JSON.stringify(instruction.parameters)}` :
-                        "Command acknowledged.";
+                    const intent = res.data.intent; // New Intent Data
+
+                    let feedback = "Command acknowledged.";
+                    if (intent) {
+                        feedback = `TACTIC LOCKED: ${intent.primary_pattern.toUpperCase()} [Risk: ${intent.risk_profile.toUpperCase()}]`;
+                        if (intent.ethical_weight !== "standard") {
+                            feedback += ` [Ethics: ${intent.ethical_weight.toUpperCase()}]`;
+                        }
+                    } else if (instruction) {
+                        feedback = `CONFIRMED: ${instruction.action}`;
+                    }
 
                     setLogs(prev => [...prev, {
                         type: 'system',
@@ -106,9 +114,17 @@ const GameContainer = () => {
             } else {
                 // Happy Path
                 const instruction = instructions[0];
-                const feedback = instruction ?
-                    `CONFIRMED: ${instruction.action} -> ${JSON.stringify(instruction.parameters)}` :
-                    "Command acknowledged.";
+                const intent = res.data.intent;
+
+                let feedback = "Command acknowledged.";
+                if (intent) {
+                    feedback = `TACTIC LOCKED: ${intent.primary_pattern.toUpperCase()} [Risk: ${intent.risk_profile.toUpperCase()}]`;
+                    if (intent.ethical_weight !== "standard") {
+                        feedback += ` [Ethics: ${intent.ethical_weight.toUpperCase()}]`;
+                    }
+                } else if (instruction) {
+                    feedback = `CONFIRMED: ${instruction.action}`;
+                }
 
                 setLogs(prev => [...prev, {
                     type: 'system',

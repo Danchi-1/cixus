@@ -160,7 +160,9 @@ async def submit_command(war_id: UUID, cmd: CommandRequest, db: AsyncSession = D
         "instructions": [i.model_dump() for i in turn_result.instructions],
         "cixus_judgment": judgment,
         "new_state": war.current_state_snapshot,
-        "friction": game_command.friction.model_dump() if game_command.friction else None
+        "friction": game_command.friction.model_dump() if game_command.friction else None,
+        "intent": game_command.intent.model_dump() if game_command.intent else None,
+        "meta_intent": game_command.meta_intent
     }
 
 @router.get("/{war_id}/state")
