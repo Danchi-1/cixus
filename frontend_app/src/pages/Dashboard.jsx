@@ -1,11 +1,33 @@
 import React, { useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
-import { Shield, Activity, Skull, Terminal, Swords } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Shield, Activity, Skull, Terminal, Swords, AlertCircle, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
+
+const Notification = ({ message, type, onClose }) => {
+    return (
+        <motion.div
+            initial={{ opacity: 0, y: 50, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.9 }}
+            className={`
+                fixed bottom-8 right-8 z-50 p-4 rounded-sm border 
+                flex items-center gap-3 shadow-2xl backdrop-blur-md
+                ${type === 'error' ? 'bg-crimson-950/90 border-crimson-800 text-crimson-200' : 'bg-obsidian-900/90 border-gold-800 text-gold-200'}
+            `}
+        >
+            {type === 'error' ? <AlertCircle className="w-5 h-5 text-crimson-500" /> : <Activity className="w-5 h-5 text-gold-500" />}
+            <span className="font-mono text-sm">{message}</span>
+            <button onClick={onClose} className="hover:opacity-70"><X className="w-4 h-4" /></button>
+        </motion.div>
+    );
+};
 
 const Dashboard = () => {
     const navigate = useNavigate();
     const [player, setPlayer] = useState(null);
+    const [loadingWar, setLoadingWar] = useState(false);
+    const [notification, setNotification] = useState(null); // { message, type }
 
     useEffect(() => {
         // Mock Auth Check (Replace with real API call later)
@@ -17,10 +39,42 @@ const Dashboard = () => {
         setPlayer(JSON.parse(storedPlayer));
     }, [navigate]);
 
+    const showNotify = (msg, type = 'info') => {
+        setNotification({ message: msg, type });
+        setTimeout(() => setNotification(null), 4000);
+    };
+
+    const handleInitializeWar = async () => {
+        if (!player) return;
+        setLoadingWar(true);
+        try {
+            const res = await axios.post("http://127.0.0.1:8080/api/v1/war/start", {
+                player_id: player.id,
+                difficulty: 1
+            });
+            showNotify(`Conflict Initialized: Session ${res.data.war_id.substring(0, 8)}...`, 'success');
+            // navigate(`/war/${res.data.war_id}`); // TODO
+        } catch (err) {
+            showNotify(`Initialization Failed: ${err.message}`, 'error');
+        } finally {
+            setLoadingWar(false);
+        }
+    };
+
     if (!player) return null;
 
     return (
-        <div className="min-h-screen bg-obsidian-950 p-8 text-obsidian-500">
+        <div className="min-h-screen bg-obsidian-950 p-8 text-obsidian-500 overflow-hidden relative">
+
+            <AnimatePresence>
+                {notification && (
+                    <Notification
+                        message={notification.message}
+                        type={notification.type}
+                        onClose={() => setNotification(null)}
+                    />
+                )}
+            </AnimatePresence>
 
             {/* Header */}
             <header className="flex justify-between items-center mb-12 border-b border-obsidian-800 pb-4">
@@ -39,7 +93,7 @@ const Dashboard = () => {
                     </div>
                     <button
                         onClick={() => navigate('/')}
-                        className="px-4 py-2 bg-obsidian-900/50 border border-obsidian-800 text-obsidian-500 hover:text-obsidian-300 transition-colors text-xs font-mono uppercase"
+                        className="px-4 py-2 bg-obsidian-900/50 border border-obsidian-800 text-obsidian-500 hover:text-obsidian-300 hover:bg-obsidian-800 active:scale-95 transition-all duration-150 text-xs font-mono uppercase cursor-pointer"
                     >
                         Disconnect
                     </button>
@@ -56,7 +110,10 @@ const Dashboard = () => {
                     className="space-y-6"
                 >
                     {/* Reputation Card */}
-                    <div className="bg-obsidian-900/50 border border-obsidian-800 p-6 rounded-sm relative overflow-hidden group">
+                    <motion.div
+                        whileHover={{ y: -5 }}
+                        className="bg-obsidian-900/50 border border-obsidian-800 p-6 rounded-sm relative overflow-hidden group transition-colors hover:border-crimson-900/50"
+                    >
                         <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
                             <Skull className="w-24 h-24 text-crimson-900" />
                         </div>
@@ -75,10 +132,13 @@ const Dashboard = () => {
                                 </div>
                             </div>
                         </div>
-                    </div>
+                    </motion.div>
 
                     {/* Recent Comms */}
-                    <div className="bg-obsidian-900/30 border border-obsidian-800 p-6 rounded-sm">
+                    <motion.div
+                        whileHover={{ y: -5 }}
+                        className="bg-obsidian-900/30 border border-obsidian-800 p-6 rounded-sm transition-colors hover:border-gold-900/30"
+                    >
                         <h3 className="flex items-center gap-2 text-sm font-mono text-obsidian-600 uppercase mb-4">
                             <Terminal className="w-4 h-4" /> System Logs
                         </h3>
@@ -87,7 +147,7 @@ const Dashboard = () => {
                             <p>&gt; Synchronizing neural link...</p>
                             <p>&gt; <span className="text-crimson-600">WARNING:</span> Enemy movement detected in Sector 4.</p>
                         </div>
-                    </div>
+                    </motion.div>
                 </motion.div>
 
                 {/* Center Column: Active Conflicts */}
@@ -101,9 +161,22 @@ const Dashboard = () => {
                         <h2 className="text-xl font-bold tracking-tight text-obsidian-400 flex items-center gap-2">
                             <Activity className="w-5 h-5 text-crimson-600" /> ACTIVE CONFLICTS
                         </h2>
-                        <button className="px-6 py-2 bg-crimson-900/20 border border-crimson-800 text-crimson-500 hover:bg-crimson-900/40 hover:text-crimson-400 transition-all text-sm font-mono uppercase tracking-wider flex items-center gap-2">
-                            <Swords className="w-4 h-4" /> Initialize New War
-                        </button>
+                        <motion.button
+                            whileHover={{ scale: 1.05, backgroundColor: "rgba(69, 14, 14, 0.4)" }}
+                            whileTap={{ scale: 0.95 }}
+                            onClick={handleInitializeWar}
+                            disabled={loadingWar}
+                            className={`
+                                px-6 py-2 bg-crimson-900/20 border border-crimson-800 text-crimson-500 
+                                transition-all duration-300 text-sm font-mono uppercase tracking-wider 
+                                flex items-center gap-2 cursor-pointer select-none 
+                                shadow-[0_0_10px_rgba(220,38,38,0.1)] hover:shadow-[0_0_20px_rgba(220,38,38,0.3)]
+                                ${loadingWar ? 'opacity-50 cursor-wait' : ''}
+                            `}
+                        >
+                            <Swords className={`w-4 h-4 ${loadingWar ? 'animate-spin' : ''}`} />
+                            {loadingWar ? 'INITIALIZING...' : 'INITIALIZE CONFLICT'}
+                        </motion.button>
                     </div>
 
                     {/* Empty State / War List */}
