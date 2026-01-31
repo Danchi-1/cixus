@@ -9,18 +9,21 @@ class ContextBuilder:
     """
     
     @staticmethod
-    def build_judgment_context(war: WarSession, current_state: GameState, recent_logs: List[str]) -> Dict[str, Any]:
+    def build_judgment_context(war: WarSession, current_state: GameState, recent_logs: List[str], player_pkg: Dict[str, Any] = None) -> Dict[str, Any]:
         """
         Creates the payload to send to Cixus for judgment.
+        Now includes Deep Context.
         """
         # 1. Trait Context (Mock for now, would come from Enemy Profile)
+        # In future, pull from war.general.traits
         enemy_traits = ["Aggressive", "Observant", "Ruthless"]
         
         # 2. Situational awareness
         casualty_report = ContextBuilder._analyze_casualties(current_state)
         
-        # 3. Recent History (Narrative compression)
-        # In a real system, this would be the 'last_judgment_context' + new delta
+        # 3. Terrain / Environmental Context
+        # Flatten modifiers for AI
+        terrain_context = current_state.terrain_modifiers
         
         return {
             "war_id": str(war.id),
@@ -28,7 +31,9 @@ class ContextBuilder:
             "turn_count": current_state.turn_count,
             "casualties": casualty_report,
             "recent_events": recent_logs,
-            "player_authority": 50 # TODO: fetch real
+            "terrain": terrain_context,
+            "player_authority": player_pkg.get("authority", 50) if player_pkg else 50,
+            "authority_trend": player_pkg.get("trend", "stable") if player_pkg else "stable"
         }
 
     @staticmethod

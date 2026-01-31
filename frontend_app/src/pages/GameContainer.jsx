@@ -57,6 +57,8 @@ const GameContainer = () => {
 
         const cmdText = command;
         setCommand('');
+        // Don't set transmitting true immediately if we want to show "Sending..." logic
+        // But for polished UI, let's keep it simple.
         setIsTransmitting(true);
 
         setLogs(prev => [...prev, { type: 'user', text: cmdText }]);
@@ -67,16 +69,52 @@ const GameContainer = () => {
                 content: cmdText
             });
 
-            // Handle AI Response
-            const instruction = res.data.instructions[0];
-            const feedback = instruction ?
-                `CONFIRMED: ${instruction.action} -> ${JSON.stringify(instruction.parameters)}` :
-                "Command acknowledged.";
+            // Handle Friction / AI Response
+            const friction = res.data.friction;
+            const instructions = res.data.instructions;
 
-            setLogs(prev => [...prev, {
-                type: 'system',
-                text: feedback
-            }]);
+            // 1. Check for Refusal
+            const refusal = instructions.find(i => i.action === "HOLD" && i.parameters.reason && i.parameters.reason !== "INSUFFICIENT_AUTHORITY");
+
+            if (refusal) {
+                setLogs(prev => [...prev, {
+                    type: 'system',
+                    text: `COMMAND REJECTED: ${refusal.parameters.reason}`,
+                    isRefusal: true
+                }]);
+            } else if (friction?.latency_ticks > 0) {
+                // 2. Check for Latency
+                const delayMs = friction.latency_ticks * 1000;
+                setLogs(prev => [...prev, {
+                    type: 'system',
+                    text: `TRANSMIT DELAYED: Encrypting... (${friction.latency_ticks}s latency)`
+                }]);
+
+                // Simulate the delay before confirming (visual only, backend already queued it)
+                setTimeout(() => {
+                    const instruction = instructions[0];
+                    const feedback = instruction ?
+                        `CONFIRMED: ${instruction.action} -> ${JSON.stringify(instruction.parameters)}` :
+                        "Command acknowledged.";
+
+                    setLogs(prev => [...prev, {
+                        type: 'system',
+                        text: feedback
+                    }]);
+                }, delayMs);
+
+            } else {
+                // Happy Path
+                const instruction = instructions[0];
+                const feedback = instruction ?
+                    `CONFIRMED: ${instruction.action} -> ${JSON.stringify(instruction.parameters)}` :
+                    "Command acknowledged.";
+
+                setLogs(prev => [...prev, {
+                    type: 'system',
+                    text: feedback
+                }]);
+            }
 
             // Cixus Judgment
             if (res.data.cixus_judgment) {
@@ -187,7 +225,9 @@ const GameContainer = () => {
                                 className={`
                                     p-3 rounded-sm border-l-2 relative overflow-hidden group
                                     ${log.type === 'user' ? 'bg-obsidian-800/50 border-gold-600/50 text-gold-100 ml-8' : ''}
+                                    ${log.type === 'user' ? 'bg-obsidian-800/50 border-gold-600/50 text-gold-100 ml-8' : ''}
                                     ${log.type === 'system' ? 'border-obsidian-600 text-obsidian-400' : ''}
+                                    ${log.type === 'system' && log.isRefusal ? 'bg-crimson-950/20 border-crimson-500 text-crimson-400' : ''}
                                     ${log.type === 'cixus' ? 'bg-crimson-950/40 border-crimson-600 text-crimson-200 border-l-4 shadow-[inset_0_0_20px_rgba(153,27,27,0.1)]' : ''}
                                 `}
                             >

@@ -176,18 +176,42 @@ class AIOrchestrator:
     """
     
     @staticmethod
-    async def parse_command_intent(raw_text: str, context_summary: str) -> GameCommand:
+    @staticmethod
+    async def parse_command_intent(raw_text: str, context: Dict[str, Any]) -> GameCommand:
         """
-        Parses NL commands into GameCommand.
+        Parses NL commands into GameCommand AND determines Dynamic Friction (Cixus Phase 1).
         """
         import re
+        import random
+        from app.engine.types import CommandFriction
         
         raw_lower = raw_text.lower()
         action = ActionType.MOVE
         meta_intent = "Standard"
         
-        # 1. Detect Action Type
-        if "attack" in raw_lower or "charge" in raw_lower:
+        # 1. Detect Action Type & Meta-Intent
+        if "ambush" in raw_lower or "trap" in raw_lower:
+            action = ActionType.AMBUSH
+            meta_intent = "Stealth/Surprise"
+        elif "siege" in raw_lower or "starve" in raw_lower or "blockade" in raw_lower:
+            action = ActionType.SIEGE
+            meta_intent = "Attrition"
+        elif "psyops" in raw_lower or "terror" in raw_lower or "propaganda" in raw_lower or "fear" in raw_lower:
+            action = ActionType.PSYOPS
+            meta_intent = "Psychological Warfare"
+        elif "recon" in raw_lower or "scout" in raw_lower or "scan" in raw_lower:
+            action = ActionType.RECON
+            meta_intent = "Intelligence Gathering"
+        elif "sacrifice" in raw_lower or "suicide" in raw_lower or "glory" in raw_lower:
+            action = ActionType.SACRIFICE
+            meta_intent = "High Cost / High Impact"
+        elif "guerrilla" in raw_lower or "hit and run" in raw_lower:
+            action = ActionType.GUERRILLA
+            meta_intent = "Asymmetric"
+        elif "retreat" in raw_lower or "fallback" in raw_lower:
+            action = ActionType.RETREAT
+            meta_intent = "Survival"
+        elif "attack" in raw_lower or "charge" in raw_lower:
             action = ActionType.ATTACK
             meta_intent = "Aggressive"
         elif "halt" in raw_lower or "hold" in raw_lower:
@@ -213,11 +237,40 @@ class AIOrchestrator:
                 destination = sector_map[sector_num]
                 meta_intent += f" -> Sector {sector_num}"
 
+        # 3. Dynamic Friction Calculation (Heuristic for MVP, acts as Cixus Phase 1)
+        # In a full LLM version, we'd ask Gemini: "Based on authority and tone, how much friction?"
+        authority = context.get("player_authority", 50)
+        friction = CommandFriction(latency_ticks=0, corruption="none", refusal_chance=0.0)
+        
+        # Tone Analysis (Simple)
+        is_hesitant = "maybe" in raw_lower or "try" in raw_lower or "if possible" in raw_lower
+        is_urgent = "immediately" in raw_lower or "now" in raw_lower or "!" in raw_text
+
+        # Base Friction Map
+        if authority < 20:
+             friction.latency_ticks = random.randint(1, 3)
+             friction.refusal_chance = 0.3
+             friction.message = "Signal degraded. Units questioning orders."
+        elif authority < 50:
+             friction.latency_ticks = 1 if not is_urgent else 0
+             friction.refusal_chance = 0.1
+        
+        # Keyword Mods
+        if is_hesitant:
+            friction.latency_ticks += 1
+            friction.message = "Hesitation detected. Command delayed."
+        
+        # Complex Action Penalty
+        if action in [ActionType.AMBUSH, ActionType.PSYOPS] and authority < 60:
+             friction.refusal_chance += 0.1
+             friction.message = "Complex tactic requires higher authority."
+
         return GameCommand(
             action_type=action,
             target_unit_ids=["unit_alpha"],
             destination=destination,
-            meta_intent=meta_intent
+            meta_intent=meta_intent,
+            friction=friction
         )
 
     @staticmethod

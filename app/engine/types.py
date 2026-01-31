@@ -9,6 +9,12 @@ class ActionType(str, Enum):
     RETREAT = "RETREAT"
     FLANK = "FLANK"
     HOLD = "HOLD"
+    AMBUSH = "AMBUSH"
+    SIEGE = "SIEGE"
+    RECON = "RECON"
+    PSYOPS = "PSYOPS"
+    SACRIFICE = "SACRIFICE"
+    GUERRILLA = "GUERRILLA"
 
 class UnitState(BaseModel):
     unit_id: str
@@ -30,6 +36,15 @@ class GameState(BaseModel):
     
     model_config = ConfigDict(from_attributes=True)
 
+class CommandFriction(BaseModel):
+    """
+    Dynamic Friction determined by Cixus before execution.
+    """
+    latency_ticks: int = 0
+    corruption: str = "none" # "none", "scrambled", "inverted"
+    refusal_chance: float = 0.0
+    message: str | None = None # e.g. "Static interference..."
+
 class GameCommand(BaseModel):
     """
     The Raw Intent from the Player/LLM.
@@ -39,6 +54,9 @@ class GameCommand(BaseModel):
     destination: Dict[str, float] | None = None
     target_enemy_id: str | None = None
     meta_intent: str | None = None # e.g. "Sacrifice"
+    
+    # New Field: AI-Determined Friction
+    friction: CommandFriction | None = None
 
 class EngineInstruction(BaseModel):
     """

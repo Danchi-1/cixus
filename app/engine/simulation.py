@@ -23,7 +23,22 @@ class SimulationEngine:
         instructions = []
         cost = AUTHORITY_COSTS.get(command.action_type, 10)
         
-        # 1. Authority Check
+        # 1. Dynamic Friction Check (Refusal)
+        if command.friction and command.friction.refusal_chance > 0:
+            import random
+            if random.random() < command.friction.refusal_chance:
+                 # Command Refused
+                 for uid in command.target_unit_ids:
+                    instructions.append(EngineInstruction(
+                        instruction_id=str(uuid.uuid4()),
+                        unit_id=uid,
+                        action=ActionType.HOLD,
+                        parameters={"reason": command.friction.message or "REFUSAL"},
+                        cost_deducted=0
+                    ))
+                 return instructions
+
+        # 2. Authority Check
         if player.authority_points < cost:
             # Downgrade logic could go here, for now just fail or HOLD
             # "Soldiers are confused, they hold position."
@@ -37,7 +52,7 @@ class SimulationEngine:
                 ))
             return instructions
 
-        # 2. Process Valid Command
+        # 3. Process Valid Command
         # This is where we would do physics clamping (e.g. max_speed check)
         # For MVP, we assume the command is mostly valid but we generate the rigorous instruction
         
@@ -49,6 +64,10 @@ class SimulationEngine:
                 # (Pseudocode for MVP simplification)
                 params["target_pos"] = command.destination
                 params["speed"] = 1.0
+            
+            # Apply Latency Parameter
+            if command.friction and command.friction.latency_ticks > 0:
+                params["execution_delay"] = command.friction.latency_ticks
             
             instructions.append(EngineInstruction(
                 instruction_id=str(uuid.uuid4()),
