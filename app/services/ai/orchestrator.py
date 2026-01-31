@@ -58,7 +58,7 @@ class AIOrchestrator:
         )
 
     @staticmethod
-    async def get_cixus_judgment(action_log: dict, general_profile: dict) -> dict:
+    async def get_cixus_judgment(action_intent: dict, sitrep: dict) -> dict:
         """
         MOCK: Cixus evaluates the turn.
         """

@@ -16,6 +16,10 @@ class UnitState(BaseModel):
     health: float
     position: Dict[str, float] # {"x": 1.0, "z": 2.0}
     status: str # ACTIVE, ROUTED, DEAD
+    
+    # AI/Psychology State
+    obedience: float = 1.0 # 0.0 to 1.0
+    hesitation: bool = False # If true, unit may refuse orders
 
 class GameState(BaseModel):
     turn_count: int

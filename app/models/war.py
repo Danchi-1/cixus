@@ -20,6 +20,8 @@ class WarSession(Base):
     
     # AI Context
     history_summary: Mapped[str] = mapped_column(String, default="") # RAG context for AI
+    last_judgment_context: Mapped[dict] = mapped_column(JSON, default=dict, nullable=True) # Summary of recent history for Prompting
+    last_regen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True) # For 24h cycle
     
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -27,3 +29,4 @@ class WarSession(Base):
     player = relationship("Player", back_populates="wars")
     general = relationship("General", back_populates="war", uselist=False)
     actions = relationship("ActionLog", back_populates="war")
+    authority_logs = relationship("AuthorityLog", back_populates="war", cascade="all, delete-orphan")
