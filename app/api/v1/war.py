@@ -12,7 +12,6 @@ from app.models.general import General
 from app.engine.types import GameState, UnitState, GameCommand
 from app.engine.simulation import SimulationEngine
 from app.services.ai import AIOrchestrator
-from app.services.ai.friction_calculator import FrictionCalculator
 from app.services.ai.context_builder import ContextBuilder
 from app.models.authority import AuthorityLog
 from pydantic import BaseModel
@@ -75,28 +74,17 @@ async def submit_command(war_id: UUID, cmd: CommandRequest, db: AsyncSession = D
     
     # 1. AI Parse Intent & Context
     # In reality, fetch context summary from war.history_summary
-    game_command = await AIOrchestrator.parse_command_intent(cmd.content, war.history_summary)
+    game_command = await AIOrchestrator.parse_command_intent(cmd.content, {"player_authority": player.authority_points})
     
     # 2. Friction Layer (The Limiter)
-    # Determine noise based on CURRENT Authority
-    friction_profile = FrictionCalculator.calculate_friction(player.authority_points or 100)
+    # Friction is now determined inside parse_command_intent and attached to game_command
     
     # 3. Simulation Execution (with Friction and Validation)
     current_game_state = GameState.model_validate(war.current_state_snapshot)
     
-    # Validate & Clamp (Now includes friction application if we want, or do it in process_turn)
-    # For now, we pass friction to validate_and_clamp if supported, or just let sim handle it?
-    # Let's pass it as a param to process_turn or modify command here? 
-    # Decision: Friction modifies the instructions generated.
-    
-    # Note: validate_and_clamp currently simple. We'll assume the engine handles the command.
+    # Validate & Clamp
     instructions = SimulationEngine.validate_and_clamp(game_command, player, current_game_state)
     
-    # Apply Friction to instructions (Mock logic for now)
-    if friction_profile.latency_ticks > 0:
-        # In a real system, we'd queue these. For MVP/MVP+, we just log it.
-        pass
-        
     turn_result = SimulationEngine.process_turn(current_game_state, instructions)
     
     # 4. Update DB
