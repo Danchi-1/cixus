@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Terminal, Send, Shield, Activity, Map as MapIcon, ChevronLeft, Wifi, AlertTriangle } from 'lucide-react';
-import axios from 'axios';
+import api from '../api';
 
 const GameContainer = () => {
     const { warId } = useParams();
@@ -31,7 +31,7 @@ const GameContainer = () => {
         if (!warId) return;
         const fetchState = async () => {
             try {
-                const res = await axios.get(`http://127.0.0.1:8080/api/v1/war/${warId}/state`);
+                const res = await api.get(`/api/v1/war/${warId}/state`);
                 setGameState({
                     turn: res.data.turn_count,
                     player_authority: 100, // TODO: Add real AP
@@ -62,7 +62,7 @@ const GameContainer = () => {
         setLogs(prev => [...prev, { type: 'user', text: cmdText }]);
 
         try {
-            const res = await axios.post(`http://127.0.0.1:8080/api/v1/war/${warId}/command`, {
+            const res = await api.post(`/api/v1/war/${warId}/command`, {
                 type: "text",
                 content: cmdText
             });
