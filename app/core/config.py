@@ -28,7 +28,8 @@ class Settings(BaseSettings):
     def async_database_url(self) -> str:
         if self.DATABASE_URL:
             return self.DATABASE_URL
-        return f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+        # Default to SQLite for easy deployment/local use
+        return "sqlite+aiosqlite:///./cixus.db"
 
 @lru_cache()
 def get_settings():

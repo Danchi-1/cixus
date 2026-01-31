@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { ShieldAlert, ChevronRight, Skull, Target, Crosshair, Users } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import api from '../api';
 
 const Landing = () => {
     const [hovered, setHovered] = useState(false);
@@ -16,7 +16,7 @@ const Landing = () => {
             const username = `Commander-${Math.floor(Math.random() * 10000)}`;
             // Note: Check if backend URL is env var or proxy. For now assuming localhost:8080 via proxy or direct
             // Ideally we setup a proxy in vite.config.js, for now direct absolute for stability
-            const response = await axios.post('http://127.0.0.1:8080/api/v1/players/', {
+            const response = await api.post('/api/v1/players/', {
                 username: username
             });
 

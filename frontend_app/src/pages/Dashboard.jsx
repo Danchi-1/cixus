@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Shield, Activity, Skull, Terminal, Swords, AlertCircle, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import api from '../api';
 
 const Notification = ({ message, type, onClose }) => {
     return (
@@ -48,7 +48,7 @@ const Dashboard = () => {
         if (!player) return;
         setLoadingWar(true);
         try {
-            const res = await axios.post("http://127.0.0.1:8080/api/v1/war/start", {
+            const res = await api.post("/api/v1/war/start", {
                 player_id: player.id,
                 difficulty: 1
             });
