@@ -1,6 +1,6 @@
 from typing import List
 import uuid
-from app.engine.types import GameCommand, ActionType
+from app.engine.types import GameCommand
 
 # CIXUS META-INTELLIGENCE PROMPT
 # The core personality of the game.

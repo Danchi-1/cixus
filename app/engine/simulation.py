@@ -1,6 +1,6 @@
 import uuid
 from typing import List
-from app.engine.types import GameState, GameCommand, EngineInstruction, TurnResult, ActionType
+from app.engine.types import GameState, GameCommand, EngineInstruction, TurnResult
 from app.models.player import Player
 
 class SimulationEngine:
