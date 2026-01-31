@@ -53,7 +53,7 @@ const Dashboard = () => {
                 difficulty: 1
             });
             showNotify(`Conflict Initialized: Session ${res.data.war_id.substring(0, 8)}...`, 'success');
-            // navigate(`/war/${res.data.war_id}`); // TODO
+            setTimeout(() => navigate(`/war/${res.data.war_id}`), 1500); // Short delay for toast read
         } catch (err) {
             showNotify(`Initialization Failed: ${err.message}`, 'error');
         } finally {

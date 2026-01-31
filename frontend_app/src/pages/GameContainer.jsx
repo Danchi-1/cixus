@@ -25,42 +25,69 @@ const GameContainer = () => {
         scrollToBottom();
     }, [logs]);
 
-    // Mock initial fetch
+    // Poll for game state
     useEffect(() => {
-        // In real impl, we fetch GET /api/v1/war/{warId}/state
-        setGameState({
-            turn: 1,
-            player_authority: 100,
-            status: "ACTIVE"
-        });
+        if (!warId) return;
+        const fetchState = async () => {
+            try {
+                const res = await axios.get(`http://127.0.0.1:8080/api/v1/war/${warId}/state`);
+                setGameState({
+                    turn: res.data.turn_count,
+                    player_authority: 100, // TODO: Add to state snapshot or fetch player
+                    status: res.data.general_status,
+                    units: res.data.player_units
+                });
+            } catch (err) {
+                console.error("Polling Error:", err);
+            }
+        };
+
+        fetchState(); // Initial
+        const interval = setInterval(fetchState, 1000); // Poll every 1s
+        return () => clearInterval(interval);
     }, [warId]);
 
     const handleSendCommand = async (e) => {
         e.preventDefault();
         if (!command.trim()) return;
 
-        // Add user command to log
-        const newLogs = [...logs, { type: 'user', text: command }];
-        setLogs(newLogs);
+        const cmdText = command;
         setCommand('');
 
-        // Simulate processing / API call
-        // const res = await axios.post(...)
+        // Optimistic UI update
+        setLogs(prev => [...prev, { type: 'user', text: cmdText }]);
 
-        // Mock Response
-        setTimeout(() => {
+        try {
+            const res = await axios.post(`http://127.0.0.1:8080/api/v1/war/${warId}/command`, {
+                type: "text",
+                content: cmdText
+            });
+
+            // Handle AI Response
+            const instruction = res.data.instructions[0];
+            const feedback = instruction ?
+                `CONFIRMED: ${instruction.action} -> ${JSON.stringify(instruction.parameters)}` :
+                "Command acknowledged.";
+
             setLogs(prev => [...prev, {
                 type: 'system',
-                text: 'Processing command logic...'
+                text: feedback
             }]);
 
-            setTimeout(() => {
+            // Cixus Judgment
+            if (res.data.cixus_judgment) {
                 setLogs(prev => [...prev, {
                     type: 'cixus',
-                    text: 'Command Validated. Unit Alpha moving to sector 7. Ambush risk calculated at 12%.'
+                    text: res.data.cixus_judgment.commentary
                 }]);
-            }, 800);
-        }, 400);
+            }
+
+        } catch (err) {
+            setLogs(prev => [...prev, {
+                type: 'system',
+                text: `ERROR: ${err.response?.data?.detail || err.message}`
+            }]);
+        }
     };
 
     return (
@@ -99,13 +126,29 @@ const GameContainer = () => {
                 {/* 3D Viewport Area */}
                 <div className="flex-1 bg-black relative flex items-center justify-center border-r border-obsidian-800">
                     {/* Placeholder for Unity Canvas */}
-                    <div className="absolute inset-0 grid grid-cols-[repeat(40,minmax(0,1fr))] grid-rows-[repeat(40,minmax(0,1fr))] opacity-20 pointer-events-none">
-                        {Array.from({ length: 1600 }).map((_, i) => (
-                            <div key={i} className="border-[0.5px] border-obsidian-800" />
+                    <div className="absolute inset-0 grid grid-cols-[repeat(10,minmax(0,1fr))] grid-rows-[repeat(10,minmax(0,1fr))] opacity-20 pointer-events-none">
+                        {Array.from({ length: 100 }).map((_, i) => (
+                            <div key={i} className="border-[0.5px] border-obsidian-800 text-[8px] text-obsidian-700 flex items-center justify-center">
+                                {i + 1}
+                            </div>
                         ))}
                     </div>
 
-                    <div className="text-center space-y-4 z-10 opacity-50">
+                    {/* Render Units (2D representation for now) */}
+                    {gameState?.units?.map(u => (
+                        <motion.div
+                            key={u.unit_id}
+                            initial={false}
+                            animate={{
+                                left: `${u.position.x}%`,
+                                top: `${u.position.z}%`
+                            }}
+                            className="absolute w-4 h-4 bg-crimson-500 rounded-full shadow-[0_0_10px_rgba(220,38,38,0.8)] z-20"
+                            title={`Unit: ${u.unit_id}`}
+                        />
+                    ))}
+
+                    <div className="text-center space-y-4 z-10 opacity-50 pointer-events-none">
                         <MapIcon className="w-16 h-16 text-obsidian-600 mx-auto" />
                         <p className="text-sm tracking-widest text-obsidian-500">TACTICAL GRID OFFLINE</p>
                         <p className="text-xs text-obsidian-700">Awaiting WebGL Injection...</p>

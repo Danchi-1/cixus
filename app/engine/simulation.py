@@ -76,12 +76,31 @@ class SimulationEngine:
         
         for instr in instructions:
             # Apply instruction effects
+            # Apply instruction effects
             # e.g. Update position
-            if instr.action == ActionType.MOVE and "target_pos" in instr.parameters:
+            if instr.action in [ActionType.MOVE, ActionType.ATTACK, ActionType.FLANK] and "target_pos" in instr.parameters:
+                 target = instr.parameters["target_pos"]
+                 speed = instr.parameters.get("speed", 5.0) # Speed 5 units per turn
+                 
                  for u in new_units:
                      if u.unit_id == instr.unit_id:
-                         u.position = instr.parameters["target_pos"]
-                         events.append(f"Unit {u.unit_id} moving to {u.position}")
+                         # Calculate vector to target
+                         dx = target["x"] - u.position["x"]
+                         dz = target["z"] - u.position["z"]
+                         dist = (dx**2 + dz**2)**0.5
+                         
+                         if dist <= speed:
+                             # Arrived
+                             u.position = target
+                             events.append(f"Unit {u.unit_id} arrived at {u.position}")
+                         else:
+                             # Move towards
+                             ratio = speed / dist
+                             u.position = {
+                                 "x": u.position["x"] + dx * ratio,
+                                 "z": u.position["z"] + dz * ratio
+                             }
+                             events.append(f"Unit {u.unit_id} moving to {u.position} (Dist: {dist:.1f})")
 
         # Check Win/Loss conditions
         game_over = False
