@@ -3,78 +3,53 @@ from typing import List
 from app.engine.types import GameState, GameCommand, EngineInstruction, TurnResult, ActionType
 from app.models.player import Player
 
-AUTHORITY_COSTS = {
-    ActionType.MOVE: 5,
-    ActionType.ATTACK: 10,
-    ActionType.FLANK: 20, # Expensive, requires coordination
-    ActionType.RETREAT: 50, # Massive cost to authority/morale
-    ActionType.HOLD: 2
-}
-
 class SimulationEngine:
     @staticmethod
     def validate_and_clamp(command: GameCommand, player: Player, state: GameState) -> List[EngineInstruction]:
         """
         The Safety Valve.
-        1. Checks Authority Cost.
-        2. Clamps movement/actions to physics limits.
-        3. Returns deterministic instructions.
+        Now purely a signal degrade/clamp layer.
+        Does NOT judge authority or reject based on cost.
         """
         instructions = []
-        cost = AUTHORITY_COSTS.get(command.action_type, 10)
         
-        # 1. Dynamic Friction Check (Refusal)
+        # 1. Dynamic Friction Check (Refusal/Degradation is now probabilistic based on AI friction)
+        # We don't "decide" to refuse here; we just execute the friction parameters
         if command.friction and command.friction.refusal_chance > 0:
             import random
             if random.random() < command.friction.refusal_chance:
-                 # Command Refused
+                 # Command Refused (Corruption of Intent)
                  for uid in command.target_unit_ids:
                     instructions.append(EngineInstruction(
                         instruction_id=str(uuid.uuid4()),
                         unit_id=uid,
-                        action=ActionType.HOLD,
-                        parameters={"reason": command.friction.message or "REFUSAL"},
+                        action="HOLD", # Default fallback
+                        parameters={"reason": command.friction.message or "SIGNAL_LOST"},
                         cost_deducted=0
                     ))
                  return instructions
 
-        # 2. Authority Check
-        if player.authority_points < cost:
-            # Downgrade logic could go here, for now just fail or HOLD
-            # "Soldiers are confused, they hold position."
-            for uid in command.target_unit_ids:
-                instructions.append(EngineInstruction(
-                    instruction_id=str(uuid.uuid4()),
-                    unit_id=uid,
-                    action=ActionType.HOLD,
-                    parameters={"reason": "INSUFFICIENT_AUTHORITY"},
-                    cost_deducted=0
-                ))
-            return instructions
-
-        # 3. Process Valid Command
-        # This is where we would do physics clamping (e.g. max_speed check)
-        # For MVP, we assume the command is mostly valid but we generate the rigorous instruction
-        
+        # 2. Process Valid Command (No Authority Gate)
         for uid in command.target_unit_ids:
             # Mock physics: Unit can only move 10 units per turn.
             params = {}
             if command.destination:
-                # Calculate distance, clamp if > 10
-                # (Pseudocode for MVP simplification)
                 params["target_pos"] = command.destination
                 params["speed"] = 1.0
             
             # Apply Latency Parameter
             if command.friction and command.friction.latency_ticks > 0:
                 params["execution_delay"] = command.friction.latency_ticks
+                
+            # Flatten intent to string for engine
+            action_str = command.intent.primary_pattern.upper() 
             
             instructions.append(EngineInstruction(
                 instruction_id=str(uuid.uuid4()),
                 unit_id=uid,
-                action=command.action_type,
+                action=action_str,
                 parameters=params,
-                cost_deducted=cost // len(command.target_unit_ids) # Split cost? Or flat cost? keeping it simple for now
+                cost_deducted=0 # Costs are dead.
             ))
             
         return instructions
@@ -87,19 +62,18 @@ class SimulationEngine:
         new_turn_count = current_state.turn_count + 1
         events = []
         
-        # In a real engine, we'd apply physics here.
-        # For MVP, we just update the snapshot based on instructions.
-        
         # Clone state (simplistic)
         new_units = [u.model_copy() for u in current_state.player_units]
         
         for instr in instructions:
             # Apply instruction effects
-            # Apply instruction effects
-            # e.g. Update position
-            if instr.action in [ActionType.MOVE, ActionType.ATTACK, ActionType.FLANK] and "target_pos" in instr.parameters:
+            # In a real engine, we'd have a physics solver here.
+            # For MVP, broad logic:
+            
+            # Movement Logic
+            if "target_pos" in instr.parameters:
                  target = instr.parameters["target_pos"]
-                 speed = instr.parameters.get("speed", 5.0) # Speed 5 units per turn
+                 speed = instr.parameters.get("speed", 5.0) 
                  
                  for u in new_units:
                      if u.unit_id == instr.unit_id:
@@ -109,17 +83,15 @@ class SimulationEngine:
                          dist = (dx**2 + dz**2)**0.5
                          
                          if dist <= speed:
-                             # Arrived
                              u.position = target
-                             events.append(f"Unit {u.unit_id} arrived at {u.position}")
+                             events.append(f"Unit {u.unit_id} executed {instr.action} to {u.position}")
                          else:
-                             # Move towards
                              ratio = speed / dist
                              u.position = {
                                  "x": u.position["x"] + dx * ratio,
                                  "z": u.position["z"] + dz * ratio
                              }
-                             events.append(f"Unit {u.unit_id} moving to {u.position} (Dist: {dist:.1f})")
+                             events.append(f"Unit {u.unit_id} executing {instr.action} (Dist: {dist:.1f})")
 
         # Check Win/Loss conditions
         game_over = False
@@ -135,7 +107,7 @@ class SimulationEngine:
         return TurnResult(
             turn_id=new_turn_count,
             instructions=instructions,
-            state_delta={}, # TODO: Diff logic
+            state_delta={},
             events=events,
             game_over=game_over,
             new_snapshot=new_state

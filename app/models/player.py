@@ -21,6 +21,10 @@ class Player(Base):
     # Meta-Intelligence Profile
     reputation: Mapped[dict] = mapped_column(JSON, default=dict) # e.g. {"Ruthless": 0.5, "Hesitant": 0.1}
     
+    # Emergent Leadership Arc
+    leadership_profile: Mapped[dict] = mapped_column(JSON, default={})
+    # Structure: {"archetype": "Unknown", "trends": [], "inertia": 0.5}
+    
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     
     wars = relationship("WarSession", back_populates="player")

@@ -2,19 +2,14 @@ from pydantic import BaseModel, ConfigDict
 from enum import Enum
 from typing import List, Dict, Any
 
-class ActionType(str, Enum):
-    MOVE = "MOVE"
-    ATTACK = "ATTACK"
-    DEFEND = "DEFEND"
-    RETREAT = "RETREAT"
-    FLANK = "FLANK"
-    HOLD = "HOLD"
-    AMBUSH = "AMBUSH"
-    SIEGE = "SIEGE"
-    RECON = "RECON"
-    PSYOPS = "PSYOPS"
-    SACRIFICE = "SACRIFICE"
-    GUERRILLA = "GUERRILLA"
+class TacticalIntent(BaseModel):
+    """
+    Fluid tactical definition, not a fixed enum.
+    """
+    primary_pattern: str # e.g. "ambush", "suppression", "encirclement"
+    risk_profile: str # "low", "calculated", "decisive", "reckless"
+    coordination_complexity: float # 0.0 to 1.0
+    ethical_weight: str # "standard", "sacrifice", "terror", "honor"
 
 class UnitState(BaseModel):
     unit_id: str
@@ -49,7 +44,7 @@ class GameCommand(BaseModel):
     """
     The Raw Intent from the Player/LLM.
     """
-    action_type: ActionType
+    intent: TacticalIntent
     target_unit_ids: List[str]
     destination: Dict[str, float] | None = None
     target_enemy_id: str | None = None
@@ -64,7 +59,7 @@ class EngineInstruction(BaseModel):
     """
     instruction_id: str
     unit_id: str
-    action: ActionType
+    action: str # Flattened string for engine, e.g. "ambush", "move"
     parameters: Dict[str, Any] # Speed, Damage Dice, etc.
     cost_deducted: int
 
