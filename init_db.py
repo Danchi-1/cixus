@@ -10,7 +10,7 @@ from app.models.authority import AuthorityLog
 async def init_models():
     async with engine.begin() as conn:
         # For dev: Drop all tables to apply schema changes (optional, be careful)
-        # await conn.run_sync(Base.metadata.drop_all)
+        await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
     print("Database Initialized with new schema.")
 
