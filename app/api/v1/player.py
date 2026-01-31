@@ -4,6 +4,7 @@ from uuid import UUID
 from pydantic import BaseModel
 from app.db.base import get_db
 from app.models.player import Player
+from app.services.ai.narrator import narrator
 
 router = APIRouter()
 
@@ -16,11 +17,19 @@ async def create_player(req: CreatePlayerRequest, db: AsyncSession = Depends(get
     # (Simple logic for MVP)
     existing = False # TODO: query
     
-    new_player = Player(username=req.username)
+    new_player = Player(username=req.username, prelude_seen=True)
     db.add(new_player)
     await db.commit()
     
-    return {"id": new_player.id, "username": new_player.username, "authority": new_player.authority_level}
+    # Trigger Prelude
+    prelude_content = await narrator.generate_prelude(new_player.username)
+    
+    return {
+        "id": new_player.id, 
+        "username": new_player.username, 
+        "authority": new_player.authority_level,
+        "prelude": prelude_content
+    }
 
 @router.get("/{player_id}", response_model=dict)
 async def get_player(player_id: UUID, db: AsyncSession = Depends(get_db)):

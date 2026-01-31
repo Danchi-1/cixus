@@ -1,20 +1,16 @@
 import asyncio
 import os
 from sqlalchemy.ext.asyncio import create_async_engine
+from app.core.config import settings
 from dotenv import load_dotenv
 
 load_dotenv()
 
 async def test_connection():
-    # Construct URL manually to be sure
-    user = os.getenv("POSTGRES_USER", "postgres")
-    password = os.getenv("POSTGRES_PASSWORD", "password")
-    server = os.getenv("POSTGRES_SERVER", "localhost")
-    port = os.getenv("POSTGRES_PORT", "5432")
-    db_name = os.getenv("POSTGRES_DB", "cixus_rage")
-    
-    url = f"postgresql+asyncpg://{user}:{password}@{server}:{port}/{db_name}"
-    print(f"Testing connection to: postgresql+asyncpg://{user}:****@{server}:{port}/{db_name}")
+    url = settings.async_database_url
+    # Mask password for printing
+    safe_url = url.split("@")[-1]
+    print(f"Testing connection to: ...@{safe_url}")
     
     try:
         engine = create_async_engine(url)

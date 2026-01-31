@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from app.core.security import check_rate_limit
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 import uuid
@@ -61,7 +62,7 @@ async def start_war(req: CreateWarRequest, db: AsyncSession = Depends(get_db)):
     
     return {"war_id": war.id, "initial_state": initial_state.model_dump()}
 
-@router.post("/{war_id}/command", response_model=dict)
+@router.post("/{war_id}/command", response_model=dict, dependencies=[Depends(check_rate_limit)])
 async def submit_command(war_id: UUID, cmd: CommandRequest, db: AsyncSession = Depends(get_db)):
     war = await db.get(WarSession, war_id)
     if not war:

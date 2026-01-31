@@ -1,4 +1,4 @@
-from sqlalchemy import String, Integer, JSON, DateTime, Uuid
+from sqlalchemy import String, Integer, JSON, DateTime, Uuid, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 import uuid
@@ -14,6 +14,9 @@ class Player(Base):
     # Authority System
     authority_level: Mapped[int] = mapped_column(Integer, default=1)
     authority_points: Mapped[int] = mapped_column(Integer, default=100)
+    
+    # AI State
+    prelude_seen: Mapped[bool] = mapped_column(Boolean, default=False)
     
     # Meta-Intelligence Profile
     reputation: Mapped[dict] = mapped_column(JSON, default=dict) # e.g. {"Ruthless": 0.5, "Hesitant": 0.1}

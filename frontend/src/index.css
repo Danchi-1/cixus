@@ -1,0 +1,24 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-obsidian-950 text-obsidian-500 font-sans selection:bg-crimson-900 selection:text-crimson-500 overflow-x-hidden;
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    @apply text-obsidian-500 tracking-tight font-medium;
+  }
+}
+
+/* Custom Scrollbar for Chrome/Safari/Edge */
+::-webkit-scrollbar {
+    width: 8px;
+}
+::-webkit-scrollbar-track {
+    @apply bg-obsidian-900;
+}
+::-webkit-scrollbar-thumb {
+    @apply bg-obsidian-700 rounded-sm hover:bg-crimson-800 transition-colors;
+}
