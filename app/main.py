@@ -8,19 +8,18 @@ from app.db.base import engine, Base
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Ensure tables exist (No drop logic here, only create)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+    except Exception as e:
+        print(f"Database initialization failed: {e}")
     yield
 
 app = FastAPI(title=settings.PROJECT_NAME, version=settings.VERSION, lifespan=lifespan)
 
 # CORS Configuration
-origins = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "https://cixus.vercel.app",
-    "https://cixus.vercel.app/",
-]
+# Allow all origins for debugging
+origins = ["*"]
 
 app.add_middleware(
     CORSMiddleware,
