@@ -53,3 +53,9 @@ async def debug_db():
             }
     except Exception as e:
         return {"status": "error", "message": str(e), "type": type(e).__name__}
+
+from app.db.base import get_db
+from fastapi import Depends
+@app.get("/debug-dependency")
+async def debug_dependency(db: any = Depends(get_db)):
+    return {"status": "dependency_ok", "session_type": str(type(db))}
