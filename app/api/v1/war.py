@@ -66,92 +66,97 @@ async def start_war(req: CreateWarRequest, db: AsyncSession = Depends(get_db)):
 
 @router.post("/{war_id}/command", response_model=dict, dependencies=[Depends(check_rate_limit)])
 async def submit_command(war_id: UUID, cmd: CommandRequest, db: AsyncSession = Depends(get_db)):
-    war = await db.get(WarSession, war_id)
-    if not war:
-        raise HTTPException(status_code=404, detail="War not found")
+    try:
+        war = await db.get(WarSession, war_id)
+        if not war:
+            raise HTTPException(status_code=404, detail="War not found")
+            
+        player = await db.get(Player, war.player_id)
         
-    player = await db.get(Player, war.player_id)
-    
-    # 1. AI Parse Intent & Context
-    # In reality, fetch context summary from war.history_summary
-    game_command = await AIOrchestrator.parse_command_intent(cmd.content, {"player_authority": player.authority_points})
-    
-    # 2. Friction Layer (The Limiter)
-    # Friction is now determined inside parse_command_intent and attached to game_command
-    
-    # 3. Simulation Execution (with Friction and Validation)
-    current_game_state = GameState.model_validate(war.current_state_snapshot)
-    
-    # Validate & Clamp
-    instructions = SimulationEngine.validate_and_clamp(game_command, player, current_game_state)
-    
-    turn_result = SimulationEngine.process_turn(current_game_state, instructions)
-    
-    # 4. Update DB
-    war.current_state_snapshot = turn_result.new_snapshot.model_dump()
-    war.turn_count = turn_result.turn_id
-    
-    # 5. Log Action & Outcome (SitRep)
-    # Assemble Context for Cixus
-    # We need to save the log first to get ID/timestamp? No, we can just instantiate.
-    
-    formatted_sitrep = f"Events: {', '.join(turn_result.events)}. Casualties: None (Mock)."
-    
-    judgment_context = ContextBuilder.build_judgment_context(
-        war, 
-        turn_result.new_snapshot, 
-        turn_result.events
-    )
-    
-    # 6. Cixus Judgment (The Judge)
-    # "The Backend never decides. It only records."
-    # We pass the Intent + SitRep -> Cixus -> Authority Delta.
-    
-    judgment = await AIOrchestrator.get_cixus_judgment(
-        action_intent=game_command.model_dump(), 
-        sitrep=judgment_context
-    )
-    
-    # 7. Apply Judgment
-    delta = judgment.get("authority_change", 0)
-    reason = judgment.get("commentary", "No comment.")
-    
-    # Update Player Authority
-    current_ap = player.authority_points or 100
-    player.authority_points = max(0, min(100, current_ap + delta))
-    
-    # Log Authority Change
-    auth_log = AuthorityLog(
-        war_id=war.id,
-        turn_id=war.turn_count,
-        delta=delta,
-        reason=reason,
-        context_snapshot=judgment_context
-    )
-    db.add(auth_log)
-    
-    # Log Action
-    action_log = ActionLog(
-        war_id=war.id,
-        player_command_raw=cmd.content,
-        parsed_action=game_command.model_dump(),
-        outcome="SUCCESS",
-        state_delta=turn_result.state_delta,
-        cixus_evaluation=judgment
-    )
-    db.add(action_log)
-    
-    await db.commit()
-    
-    return {
-        "turn_id": turn_result.turn_id,
-        "instructions": [i.model_dump() for i in turn_result.instructions],
-        "cixus_judgment": judgment,
-        "new_state": war.current_state_snapshot,
-        "friction": game_command.friction.model_dump() if game_command.friction else None,
-        "intent": game_command.intent.model_dump() if game_command.intent else None,
-        "meta_intent": game_command.meta_intent
-    }
+        # 1. AI Parse Intent & Context
+        # In reality, fetch context summary from war.history_summary
+        game_command = await AIOrchestrator.parse_command_intent(cmd.content, {"player_authority": player.authority_points})
+        
+        # 2. Friction Layer (The Limiter)
+        # Friction is now determined inside parse_command_intent and attached to game_command
+        
+        # 3. Simulation Execution (with Friction and Validation)
+        current_game_state = GameState.model_validate(war.current_state_snapshot)
+        
+        # Validate & Clamp
+        instructions = SimulationEngine.validate_and_clamp(game_command, player, current_game_state)
+        
+        turn_result = SimulationEngine.process_turn(current_game_state, instructions)
+        
+        # 4. Update DB
+        war.current_state_snapshot = turn_result.new_snapshot.model_dump()
+        war.turn_count = turn_result.turn_id
+        
+        # 5. Log Action & Outcome (SitRep)
+        # Assemble Context for Cixus
+        # We need to save the log first to get ID/timestamp? No, we can just instantiate.
+        
+        formatted_sitrep = f"Events: {', '.join(turn_result.events)}. Casualties: None (Mock)."
+        
+        judgment_context = ContextBuilder.build_judgment_context(
+            war, 
+            turn_result.new_snapshot, 
+            turn_result.events
+        )
+        
+        # 6. Cixus Judgment (The Judge)
+        # "The Backend never decides. It only records."
+        # We pass the Intent + SitRep -> Cixus -> Authority Delta.
+        
+        judgment = await AIOrchestrator.get_cixus_judgment(
+            action_intent=game_command.model_dump(), 
+            sitrep=judgment_context
+        )
+        
+        # 7. Apply Judgment
+        delta = judgment.get("authority_change", 0)
+        reason = judgment.get("commentary", "No comment.")
+        
+        # Update Player Authority
+        current_ap = player.authority_points or 100
+        player.authority_points = max(0, min(100, current_ap + delta))
+        
+        # Log Authority Change
+        auth_log = AuthorityLog(
+            war_id=war.id,
+            turn_id=war.turn_count,
+            delta=delta,
+            reason=reason,
+            context_snapshot=judgment_context
+        )
+        db.add(auth_log)
+        
+        # Log Action
+        action_log = ActionLog(
+            war_id=war.id,
+            player_command_raw=cmd.content,
+            parsed_action=game_command.model_dump(),
+            outcome="SUCCESS",
+            state_delta=turn_result.state_delta,
+            cixus_evaluation=judgment
+        )
+        db.add(action_log)
+        
+        await db.commit()
+        
+        return {
+            "turn_id": turn_result.turn_id,
+            "instructions": [i.model_dump() for i in turn_result.instructions],
+            "cixus_judgment": judgment,
+            "new_state": war.current_state_snapshot,
+            "friction": game_command.friction.model_dump() if game_command.friction else None,
+            "intent": game_command.intent.model_dump() if game_command.intent else None,
+            "meta_intent": game_command.meta_intent
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Command Processing Failed: {str(e)}")
 
 @router.get("/{war_id}/state")
 async def get_state(war_id: UUID, db: AsyncSession = Depends(get_db)):
