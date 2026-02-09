@@ -66,6 +66,10 @@ async def reset_db():
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.drop_all)
             await conn.run_sync(Base.metadata.create_all)
-        return {"status": "success", "message": "Database reset complete. Schema updated."}
+            
+        async with engine.connect() as check_conn:
+            tables = await check_conn.run_sync(lambda sync_conn: sync_conn.dialect.get_table_names(sync_conn))
+            
+        return {"status": "success", "message": "Database reset complete. Schema updated.", "tables_created": tables}
     except Exception as e:
         return {"status": "error", "message": str(e)}
