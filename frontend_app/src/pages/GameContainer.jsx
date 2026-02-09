@@ -145,6 +145,15 @@ const GameContainer = () => {
                 }]);
             }
 
+            // Situation Report (The Narrative)
+            if (res.data.sitrep) {
+                setLogs(prev => [...prev, {
+                    type: 'system',
+                    text: `SITREP: ${res.data.sitrep}`,
+                    isSitrep: true
+                }]);
+            }
+
         } catch (err) {
             setLogs(prev => [...prev, {
                 type: 'system',
@@ -248,6 +257,7 @@ const GameContainer = () => {
                                     ${log.type === 'user' ? 'bg-obsidian-800/50 border-gold-600/50 text-gold-100 ml-8' : ''}
                                     ${log.type === 'system' ? 'border-obsidian-600 text-obsidian-400' : ''}
                                     ${log.type === 'system' && log.isRefusal ? 'bg-crimson-950/20 border-crimson-500 text-crimson-400' : ''}
+                                    ${log.type === 'system' && log.isSitrep ? 'bg-obsidian-900/80 border-l-2 border-r-0 border-y-0 border-obsidian-500 text-obsidian-300 font-sans tracking-wide italic' : ''}
                                     ${log.type === 'cixus' ? 'bg-crimson-950/40 border-crimson-600 text-crimson-200 border-l-4 shadow-[inset_0_0_20px_rgba(153,27,27,0.1)]' : ''}
                                 `}
                             >

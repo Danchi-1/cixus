@@ -22,14 +22,37 @@ try:
 except Exception as e:
     print(f"Reset Failed: {e}")
 
-print(f"\nSending POST to {url}...")
-req = urllib.request.Request(url, data=json.dumps(data).encode('utf-8'), headers=headers, method='POST')
-
+# ... player creation ...
+# ... player creation ...
+print(f"Creating Player...")
+player_req = urllib.request.Request(url, data=json.dumps(data).encode('utf-8'), headers=headers, method='POST')
 try:
-    with urllib.request.urlopen(req, context=ctx) as response:
-        print(f"Status: {response.status}")
-        print("Response Body:")
-        print(response.read().decode('utf-8'))
+    with urllib.request.urlopen(player_req, context=ctx) as response:
+        player_data = json.loads(response.read().decode('utf-8'))
+        player_id = player_data["id"]
+        print(f"Player Created: {player_id}")
+
+        # 3. Start War
+        war_url = "https://cixus.onrender.com/api/v1/war/start"
+        war_data = {"player_id": player_id, "difficulty": 1}
+        print(f"Starting War at {war_url}...")
+        
+        war_req = urllib.request.Request(war_url, data=json.dumps(war_data).encode('utf-8'), headers=headers, method='POST')
+        with urllib.request.urlopen(war_req, context=ctx) as war_response:
+            war_resp = json.loads(war_response.read().decode('utf-8'))
+            war_id = war_resp["war_id"]
+            print(f"War Started: {war_id}")
+            
+            # 4. Submit Command
+            cmd_url = f"https://cixus.onrender.com/api/v1/war/{war_id}/command"
+            cmd_data = {"type": "text", "content": "attack left flank"}
+            print(f"Sending Command to {cmd_url}...")
+            
+            cmd_req = urllib.request.Request(cmd_url, data=json.dumps(cmd_data).encode('utf-8'), headers=headers, method='POST')
+            with urllib.request.urlopen(cmd_req, context=ctx) as cmd_response:
+                print("Command Success!")
+                print(cmd_response.read().decode('utf-8'))
+
 except urllib.error.HTTPError as e:
     print(f"HTTP Error: {e.code}")
     print("Error Body:")

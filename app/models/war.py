@@ -30,3 +30,4 @@ class WarSession(Base):
     general = relationship("General", back_populates="war", uselist=False)
     actions = relationship("ActionLog", back_populates="war")
     authority_logs = relationship("AuthorityLog", back_populates="war", cascade="all, delete-orphan")
+    sitreps = relationship("SitRepLog", back_populates="war", cascade="all, delete-orphan")

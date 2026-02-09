@@ -58,45 +58,71 @@ class SimulationEngine:
     def process_turn(current_state: GameState, instructions: List[EngineInstruction]) -> TurnResult:
         """
         Advances the simulation by ONE TICK.
+        Generates Narrative Events (SitRep).
         """
         new_turn_count = current_state.turn_count + 1
         events = []
+        visual_updates = {}
         
-        # Clone state (simplistic)
+        # Clone state
         new_units = [u.model_copy() for u in current_state.player_units]
         
+        # 1. Process Instructions (Movement & Combat)
         for instr in instructions:
-            # Apply instruction effects
-            # In a real engine, we'd have a physics solver here.
-            # For MVP, broad logic:
-            
+            unit = next((u for u in new_units if u.unit_id == instr.unit_id), None)
+            if not unit: continue
+
+            if instr.action == "HOLD":
+                events.append(f"Unit {unit.unit_id[-4:]} holding position. ({instr.parameters.get('reason', 'Waiting')})")
+                continue
+
             # Movement Logic
             if "target_pos" in instr.parameters:
                  target = instr.parameters["target_pos"]
                  speed = instr.parameters.get("speed", 5.0) 
                  
-                 for u in new_units:
-                     if u.unit_id == instr.unit_id:
-                         # Calculate vector to target
-                         dx = target["x"] - u.position["x"]
-                         dz = target["z"] - u.position["z"]
-                         dist = (dx**2 + dz**2)**0.5
-                         
-                         if dist <= speed:
-                             u.position = target
-                             events.append(f"Unit {u.unit_id} executed {instr.action} to {u.position}")
-                         else:
-                             ratio = speed / dist
-                             u.position = {
-                                 "x": u.position["x"] + dx * ratio,
-                                 "z": u.position["z"] + dz * ratio
-                             }
-                             events.append(f"Unit {u.unit_id} executing {instr.action} (Dist: {dist:.1f})")
+                 # Vector Math
+                 dx = target["x"] - unit.position["x"]
+                 dz = target["z"] - unit.position["z"]
+                 dist = (dx**2 + dz**2)**0.5
+                 
+                 if dist <= speed:
+                     unit.position = target
+                     events.append(f"Unit {unit.unit_id[-4:]} arrived at sector {int(target['x'])//10}-{int(target['z'])//10}.")
+                 else:
+                     ratio = speed / dist
+                     unit.position = {
+                         "x": unit.position["x"] + dx * ratio,
+                         "z": unit.position["z"] + dz * ratio
+                     }
+                     # events.append(f"Unit {unit.unit_id} moving...") # Too noisy for SitRep
+
+        # 2. Event Generation (The Narrative Engine)
+        # Check for Flanking / Encirclement / Morale
+        
+        # Mock Logic: If units are too spread out, morale drops
+        if len(new_units) > 1:
+            u1 = new_units[0]
+            # Simple distance check for cohesion
+            # ... (omitted for brevity, just random flavor)
+            pass
+
+        # Random Flavor Events (to test Event-Driven Mode)
+        import random
+        if random.random() < 0.1:
+            events.append("Signal intercept: Enemy movement in Sector 7.")
+            visual_updates["highlight_sectors"] = [7]
+            
+        if random.random() < 0.05:
+            target_u = random.choice(new_units)
+            target_u.morale = max(0, target_u.morale - 10)
+            target_u.tags.append("suppressed")
+            events.append(f"Unit {target_u.unit_id[-4:]} taking heavy fire! Morale dropping.")
 
         # Check Win/Loss conditions
         game_over = False
         if current_state.general_status == "DEAD":
-            events.append("Enemy General Evaluated as Dead.")
+            events.append("CRITICAL: Enemy General eliminated.")
             game_over = True
 
         new_state = current_state.model_copy(update={
@@ -107,7 +133,7 @@ class SimulationEngine:
         return TurnResult(
             turn_id=new_turn_count,
             instructions=instructions,
-            state_delta={},
+            state_delta=visual_updates,
             events=events,
             game_over=game_over,
             new_snapshot=new_state

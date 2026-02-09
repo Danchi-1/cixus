@@ -21,6 +21,8 @@ class UnitState(BaseModel):
     # AI/Psychology State
     obedience: float = 1.0 # 0.0 to 1.0
     hesitation: bool = False # If true, unit may refuse orders
+    morale: float = 100.0 # 0.0 to 100.0
+    tags: List[str] = [] # "entrenched", "suppressed", "flanked"
 
 class GameState(BaseModel):
     turn_count: int
@@ -28,6 +30,10 @@ class GameState(BaseModel):
     enemy_units: List[UnitState]
     general_status: str
     terrain_modifiers: Dict[str, Any] = {}
+    
+    # Visual Abstraction
+    grid_size: int = 10 # 10x10 abstract grid
+    fog_mask: List[int] = [] # List of visible sector IDs
     
     model_config = ConfigDict(from_attributes=True)
 
