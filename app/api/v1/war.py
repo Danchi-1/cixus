@@ -9,6 +9,7 @@ from app.models.war import WarSession
 from app.models.player import Player
 from app.models.action import ActionLog
 from app.models.sitrep import SitRepLog
+from app.models.authority import AuthorityLog
 from app.services.friction import AuthorityFrictionService
 from app.models.general import General
 from app.engine.types import GameState, UnitState
