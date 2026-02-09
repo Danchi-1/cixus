@@ -32,12 +32,16 @@ const GameContainer = () => {
         const fetchState = async () => {
             try {
                 const res = await api.get(`/api/v1/war/${warId}/state`);
-                setGameState({
+                setGameState(prev => ({
+                    ...prev,
                     turn: res.data.turn_count,
-                    player_authority: 100, // TODO: Add real AP
+                    player_authority: 100, // TODO: Real AP from backend
                     status: res.data.general_status,
-                    units: res.data.player_units
-                });
+                    units: [
+                        ...res.data.player_units,
+                        ...(res.data.enemy_units || []).map(u => ({ ...u, isEnemy: true }))
+                    ]
+                }));
             } catch (err) {
                 console.error("Polling Error:", err);
                 if (err.response && err.response.status === 404) {
@@ -61,8 +65,6 @@ const GameContainer = () => {
 
         const cmdText = command;
         setCommand('');
-        // Don't set transmitting true immediately if we want to show "Sending..." logic
-        // But for polished UI, let's keep it simple.
         setIsTransmitting(true);
 
         setLogs(prev => [...prev, { type: 'user', text: cmdText }]);
@@ -72,6 +74,18 @@ const GameContainer = () => {
                 type: "text",
                 content: cmdText
             });
+
+            // Happy Path / Update State Immediately
+            if (res.data.new_state) {
+                setGameState(prev => ({
+                    ...prev,
+                    turn: res.data.new_state.turn_count,
+                    units: [
+                        ...res.data.new_state.player_units,
+                        ...(res.data.new_state.enemy_units || []).map(u => ({ ...u, isEnemy: true }))
+                    ]
+                }));
+            }
 
             // Handle Friction / AI Response
             const friction = res.data.friction;
@@ -94,10 +108,9 @@ const GameContainer = () => {
                     text: `TRANSMIT DELAYED: Encrypting... (${friction.latency_ticks}s latency)`
                 }]);
 
-                // Simulate the delay before confirming (visual only, backend already queued it)
                 setTimeout(() => {
                     const instruction = instructions[0];
-                    const intent = res.data.intent; // New Intent Data
+                    const intent = res.data.intent;
 
                     let feedback = "Command acknowledged.";
                     if (intent) {
@@ -109,10 +122,7 @@ const GameContainer = () => {
                         feedback = `CONFIRMED: ${instruction.action}`;
                     }
 
-                    setLogs(prev => [...prev, {
-                        type: 'system',
-                        text: feedback
-                    }]);
+                    setLogs(prev => [...prev, { type: 'system', text: feedback }]);
                 }, delayMs);
 
             } else {
@@ -130,10 +140,7 @@ const GameContainer = () => {
                     feedback = `CONFIRMED: ${instruction.action}`;
                 }
 
-                setLogs(prev => [...prev, {
-                    type: 'system',
-                    text: feedback
-                }]);
+                setLogs(prev => [...prev, { type: 'system', text: feedback }]);
             }
 
             // Cixus Judgment
@@ -230,14 +237,26 @@ const GameContainer = () => {
                                 left: `${u.position.x}%`,
                                 top: `${u.position.z}%`
                             }}
-                            className="absolute w-4 h-4 bg-crimson-500 rounded-full shadow-[0_0_10px_rgba(220,38,38,0.8)] z-20"
-                            title={`Unit: ${u.unit_id}`}
-                        />
+                            transition={{ type: "spring", stiffness: 50, damping: 20 }}
+                            className={`absolute w-3 h-3 rounded-full shadow-[0_0_10px_rgba(0,0,0,0.5)] z-20 
+                                ${u.isEnemy ? 'bg-cyan-500 shadow-cyan-500/50' : 'bg-crimson-500 shadow-crimson-500/50'}
+                            `}
+                            title={`${u.type} (${u.unit_id})`}
+                        >
+                            {/* Unit Label/Icon could go here */}
+                            <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 text-[6px] font-bold tracking-tighter whitespace-nowrap ${u.isEnemy ? 'text-cyan-500' : 'text-crimson-500'}`}>
+                                {u.type.substring(0, 3)}
+                            </div>
+                        </motion.div>
                     ))}
 
                     <div className="text-center space-y-4 z-10 opacity-50 pointer-events-none">
-                        <MapIcon className="w-16 h-16 text-obsidian-600 mx-auto" />
-                        <p className="text-sm tracking-widest text-obsidian-500">TACTICAL GRID OFFLINE</p>
+                        {(!gameState?.units || gameState.units.length === 0) && (
+                            <>
+                                <MapIcon className="w-16 h-16 text-obsidian-600 mx-auto" />
+                                <p className="text-sm tracking-widest text-obsidian-500">TACTICAL GRID OFFLINE</p>
+                            </>
+                        )}
                     </div>
                 </div>
 
@@ -253,7 +272,6 @@ const GameContainer = () => {
                                 animate={{ opacity: 1, x: 0 }}
                                 className={`
                                     p-3 rounded-sm border-l-2 relative overflow-hidden group
-                                    ${log.type === 'user' ? 'bg-obsidian-800/50 border-gold-600/50 text-gold-100 ml-8' : ''}
                                     ${log.type === 'user' ? 'bg-obsidian-800/50 border-gold-600/50 text-gold-100 ml-8' : ''}
                                     ${log.type === 'system' ? 'border-obsidian-600 text-obsidian-400' : ''}
                                     ${log.type === 'system' && log.isRefusal ? 'bg-crimson-950/20 border-crimson-500 text-crimson-400' : ''}
@@ -323,7 +341,7 @@ const GameContainer = () => {
                             <p className="text-[9px] text-obsidian-600 uppercase tracking-widest">
                                 {isLowAuthority ? <span className="text-crimson-500 flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> SIGNAL DEGRADED</span> : "SECURE CHANNEL ACTIVE"}
                             </p>
-                            <p className="text-[9px] text-obsidian-700">v0.9.2 BETA</p>
+                            <p className="text-[9px] text-obsidian-700">v0.9.3 BETA</p>
                         </div>
                     </form>
                 </div>
