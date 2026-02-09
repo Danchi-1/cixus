@@ -12,7 +12,17 @@ url = "https://cixus.onrender.com/api/v1/players/"
 data = {"username": "Commander-Debug-Script-01"}
 headers = {"Content-Type": "application/json"}
 
-print(f"Sending POST to {url}...")
+# Reset DB First
+reset_url = "https://cixus.onrender.com/reset-db"
+print(f"Triggering DB Reset at {reset_url}...")
+try:
+    with urllib.request.urlopen(reset_url, context=ctx) as response:
+        print(f"Reset Status: {response.status}")
+        print(response.read().decode('utf-8'))
+except Exception as e:
+    print(f"Reset Failed: {e}")
+
+print(f"\nSending POST to {url}...")
 req = urllib.request.Request(url, data=json.dumps(data).encode('utf-8'), headers=headers, method='POST')
 
 try:
