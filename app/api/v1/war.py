@@ -34,14 +34,34 @@ async def start_war(req: CreateWarRequest, db: AsyncSession = Depends(get_db)):
     if not player:
         raise HTTPException(status_code=404, detail="Player not found")
         
-    # Create Initial State
+    # Create Initial State (Squad Based)
     initial_state = GameState(
         turn_count=0,
         player_units=[
-            UnitState(unit_id="unit_alpha", type="INFANTRY", health=100, position={"x": 50.0, "z": 50.0}, status="ACTIVE")
+            UnitState(
+                unit_id="unit_commander", 
+                type="COMMANDER", 
+                health=500, 
+                position={"x": 50.0, "z": 90.0}, 
+                status="ACTIVE",
+                tags=["COMMANDER", "HERO"]
+            ),
+            UnitState(unit_id="alpha_sqd_1", type="INFANTRY", health=100, position={"x": 45.0, "z": 85.0}, status="ACTIVE"),
+            UnitState(unit_id="alpha_sqd_2", type="INFANTRY", health=100, position={"x": 55.0, "z": 85.0}, status="ACTIVE"),
+            UnitState(unit_id="bravo_tank", type="TANK", health=300, position={"x": 50.0, "z": 80.0}, status="ACTIVE")
         ],
         enemy_units=[
-            UnitState(unit_id="enemy_beta", type="TANK", health=200, position={"x": 80.0, "z": 80.0}, status="ACTIVE")
+            UnitState(
+                unit_id="enemy_warlord", 
+                type="WARLORD", 
+                health=800, 
+                position={"x": 50.0, "z": 10.0}, 
+                status="ACTIVE",
+                tags=["BOSS"]
+            ),
+            UnitState(unit_id="drone_swarm_1", type="DRONE", health=50, position={"x": 40.0, "z": 20.0}, status="ACTIVE"),
+            UnitState(unit_id="drone_swarm_2", type="DRONE", health=50, position={"x": 60.0, "z": 20.0}, status="ACTIVE"),
+            UnitState(unit_id="mech_walker", type="MECH", health=400, position={"x": 50.0, "z": 25.0}, status="ACTIVE")
         ],
         general_status="ALIVE"
     )
