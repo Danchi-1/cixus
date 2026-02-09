@@ -59,3 +59,13 @@ from fastapi import Depends
 @app.get("/debug-dependency")
 async def debug_dependency(db: any = Depends(get_db)):
     return {"status": "dependency_ok", "session_type": str(type(db))}
+
+@app.get("/reset-db")
+async def reset_db():
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
+            await conn.run_sync(Base.metadata.create_all)
+        return {"status": "success", "message": "Database reset complete. Schema updated."}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
