@@ -10,6 +10,57 @@ from app.models.player import Player
 from app.models.action import ActionLog
 from app.models.sitrep import SitRepLog
 from app.services.friction import AuthorityFrictionService
+from app.models.general import General
+from app.engine.types import GameState, UnitState
+from pydantic import BaseModel
+
+router = APIRouter()
+
+class CreateWarRequest(BaseModel):
+    player_id: UUID
+    difficulty: int = 1
+
+class CommandRequest(BaseModel):
+    type: str # "text" or "preset"
+    content: str # "Attack left flank"
+
+@router.post("/start", response_model=dict)
+async def start_war(req: CreateWarRequest, db: AsyncSession = Depends(get_db)):
+    player = await db.get(Player, req.player_id)
+    if not player:
+        raise HTTPException(status_code=404, detail="Player not found")
+        
+    # Create Initial State
+    initial_state = GameState(
+        turn_count=0,
+        player_units=[
+            UnitState(unit_id="unit_alpha", type="INFANTRY", health=100, position={"x": 50.0, "z": 50.0}, status="ACTIVE")
+        ],
+        enemy_units=[
+            UnitState(unit_id="enemy_beta", type="TANK", health=200, position={"x": 80.0, "z": 80.0}, status="ACTIVE")
+        ],
+        general_status="ALIVE"
+    )
+
+    war = WarSession(
+        player_id=player.id,
+        current_state_snapshot=initial_state.model_dump(),
+        status="ACTIVE"
+    )
+    db.add(war)
+    await db.flush() # Get ID
+    
+    # Create Enemy General
+    general = General(
+        war_id=war.id,
+        name="General Kael",
+        difficulty_tier=req.difficulty,
+        traits=["Aggressive"]
+    )
+    db.add(general)
+    await db.commit()
+    
+    return {"war_id": war.id, "initial_state": initial_state.model_dump()}
 
 @router.post("/{war_id}/command", response_model=dict, dependencies=[Depends(check_rate_limit)])
 async def submit_command(war_id: UUID, cmd: CommandRequest, db: AsyncSession = Depends(get_db)):
