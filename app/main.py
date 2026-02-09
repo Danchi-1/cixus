@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.api.v1 import war, player
-from app.db.base import init_db, engine, Base
+from app.db.base import engine, Base
 
 # Import Models explicitly to register them with Base.metadata
 # This fixes the circular import issue in app/db/base.py
