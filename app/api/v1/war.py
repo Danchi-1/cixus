@@ -34,22 +34,43 @@ async def start_war(req: CreateWarRequest, db: AsyncSession = Depends(get_db)):
     if not player:
         raise HTTPException(status_code=404, detail="Player not found")
         
-    # Create Initial State (Squad Based)
+    # Rank-Based Scaling
+    # Level 1: Squad Leader (Commander + 2 Infantry)
+    # Level 2-3: Review (Tank unlocked)
+    # Level 4-5: General (Full Access)
+    
+    player_force = []
+    
+    # Always have the Commander
+    player_force.append(
+        UnitState(
+            unit_id="unit_commander", 
+            type="COMMANDER", 
+            health=500 + (player.authority_level * 50), 
+            position={"x": 50.0, "z": 90.0}, 
+            status="ACTIVE",
+            tags=["COMMANDER", "HERO"]
+        )
+    )
+    
+    # Scale Troops
+    squad_size = 2 + player.authority_level
+    for i in range(squad_size):
+        offset = (i - squad_size/2) * 5
+        player_force.append(
+             UnitState(unit_id=f"sqd_{i}", type="INFANTRY", health=100, position={"x": 50.0 + offset, "z": 85.0}, status="ACTIVE")
+        )
+        
+    # Unlock Heavy Armor at Level 3
+    if player.authority_level >= 3:
+        player_force.append(
+            UnitState(unit_id="bravo_tank", type="TANK", health=300, position={"x": 50.0, "z": 80.0}, status="ACTIVE")
+        )
+
+    # Create Initial State
     initial_state = GameState(
         turn_count=0,
-        player_units=[
-            UnitState(
-                unit_id="unit_commander", 
-                type="COMMANDER", 
-                health=500, 
-                position={"x": 50.0, "z": 90.0}, 
-                status="ACTIVE",
-                tags=["COMMANDER", "HERO"]
-            ),
-            UnitState(unit_id="alpha_sqd_1", type="INFANTRY", health=100, position={"x": 45.0, "z": 85.0}, status="ACTIVE"),
-            UnitState(unit_id="alpha_sqd_2", type="INFANTRY", health=100, position={"x": 55.0, "z": 85.0}, status="ACTIVE"),
-            UnitState(unit_id="bravo_tank", type="TANK", health=300, position={"x": 50.0, "z": 80.0}, status="ACTIVE")
-        ],
+        player_units=player_force,
         enemy_units=[
             UnitState(
                 unit_id="enemy_warlord", 
