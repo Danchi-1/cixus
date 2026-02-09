@@ -27,6 +27,7 @@ const Dashboard = () => {
     const navigate = useNavigate();
     const [player, setPlayer] = useState(null);
     const [loadingWar, setLoadingWar] = useState(false);
+    const [activeWars, setActiveWars] = useState([]);
     const [notification, setNotification] = useState(null); // { message, type }
 
     useEffect(() => {
@@ -36,7 +37,20 @@ const Dashboard = () => {
             navigate('/');
             return;
         }
-        setPlayer(JSON.parse(storedPlayer));
+        const parsedPlayer = JSON.parse(storedPlayer);
+        setPlayer(parsedPlayer);
+
+        // Fetch Active Wars
+        const fetchWars = async () => {
+            try {
+                const res = await api.get(`/api/v1/war/active?player_id=${parsedPlayer.id}`);
+                setActiveWars(res.data);
+            } catch (err) {
+                console.error("Failed to load wars:", err);
+            }
+        };
+        fetchWars();
+
     }, [navigate]);
 
     const showNotify = (msg, type = 'info') => {
@@ -179,16 +193,42 @@ const Dashboard = () => {
                         </motion.button>
                     </div>
 
-                    {/* Empty State / War List */}
-                    <div className="border border-dashed border-obsidian-800 rounded-sm p-12 flex flex-col items-center justify-center text-center bg-obsidian-900/20">
-                        <div className="w-16 h-16 bg-obsidian-800 rounded-full flex items-center justify-center mb-4 text-obsidian-600">
-                            <Activity className="w-8 h-8" />
+                    {/* War List */}
+                    {activeWars.length > 0 ? (
+                        <div className="grid gap-4">
+                            {activeWars.map(war => (
+                                <motion.div
+                                    key={war.war_id}
+                                    initial={{ opacity: 0, x: -10 }}
+                                    animate={{ opacity: 1, x: 0 }}
+                                    onClick={() => navigate(`/war/${war.war_id}`)}
+                                    className="bg-obsidian-900/40 border border-obsidian-800 p-4 rounded-sm flex justify-between items-center cursor-pointer hover:bg-obsidian-800/60 hover:border-gold-800/50 transition-all group"
+                                >
+                                    <div>
+                                        <h4 className="text-sm font-bold text-obsidian-300 group-hover:text-gold-400 transition-colors">
+                                            OPERATION {war.war_id.substring(0, 8).toUpperCase()}
+                                        </h4>
+                                        <p className="text-xs font-mono text-obsidian-600 mt-1">
+                                            TURN {war.turn} // DEPLOYED {new Date(war.created_at).toLocaleDateString()}
+                                        </p>
+                                    </div>
+                                    <div className="px-3 py-1 bg-green-900/20 text-green-500 text-[10px] font-bold tracking-widest border border-green-900/50 rounded-sm">
+                                        ACTIVE
+                                    </div>
+                                </motion.div>
+                            ))}
                         </div>
-                        <h3 className="text-lg font-medium text-obsidian-500 mb-2">NO ACTIVE CAMPAIGNS</h3>
-                        <p className="max-w-md text-obsidian-600 text-sm mb-6">
-                            Peace is a momentary graphical glitch. Initialize a war campaign to begin conquest.
-                        </p>
-                    </div>
+                    ) : (
+                        <div className="border border-dashed border-obsidian-800 rounded-sm p-12 flex flex-col items-center justify-center text-center bg-obsidian-900/20">
+                            <div className="w-16 h-16 bg-obsidian-800 rounded-full flex items-center justify-center mb-4 text-obsidian-600">
+                                <Activity className="w-8 h-8" />
+                            </div>
+                            <h3 className="text-lg font-medium text-obsidian-500 mb-2">NO ACTIVE CAMPAIGNS</h3>
+                            <p className="max-w-md text-obsidian-600 text-sm mb-6">
+                                Peace is a momentary graphical glitch. Initialize a war campaign to begin conquest.
+                            </p>
+                        </div>
+                    )}
                 </motion.div>
 
             </div>
