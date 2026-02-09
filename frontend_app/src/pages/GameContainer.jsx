@@ -280,6 +280,20 @@ const GameContainer = () => {
                         <div ref={logsEndRef} />
                     </div>
 
+                    {/* Preset Commands */}
+                    <div className="px-4 pb-2 flex gap-2 overflow-x-auto scrollbar-thin scrollbar-thumb-obsidian-700">
+                        {["FLANK LEFT", "FLANK RIGHT", "CHARGE", "DIG IN", "RECON", "SUPPRESS", "HOLD FIRE"].map(cmd => (
+                            <button
+                                key={cmd}
+                                type="button"
+                                onClick={() => setCommand(cmd)}
+                                className="px-3 py-1 bg-obsidian-800 border border-obsidian-700 text-[10px] text-obsidian-400 hover:text-gold-500 hover:border-gold-700 transition-colors whitespace-nowrap rounded-sm"
+                            >
+                                {cmd}
+                            </button>
+                        ))}
+                    </div>
+
                     {/* Input Area */}
                     <form onSubmit={handleSendCommand} className="p-4 border-t border-obsidian-800 bg-obsidian-950">
                         <div className="relative group">
