@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
-from app.api.v1 import war, player, system
+from app.api.v1 import war, player
 from app.db.base import init_db, engine, Base
 
 # Import Models explicitly to register them with Base.metadata
