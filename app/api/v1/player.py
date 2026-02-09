@@ -13,37 +13,39 @@ class CreatePlayerRequest(BaseModel):
 
 @router.post("/", response_model=dict)
 async def create_player(req: CreatePlayerRequest, db: AsyncSession = Depends(get_db)):
-    # Check if exists
-    from sqlalchemy import select
-    result = await db.execute(select(Player).where(Player.username == req.username))
-    existing_player = result.scalars().first()
-    
-    if existing_player:
-        return {
-            "id": existing_player.id, 
-            "username": existing_player.username, 
-            "authority": existing_player.authority_level,
-            "prelude": {"skipped": True, "reason": "Returning Commander"}
-        }
-    
     try:
+        # Check if exists
+        from sqlalchemy import select
+        result = await db.execute(select(Player).where(Player.username == req.username))
+        existing_player = result.scalars().first()
+        
+        if existing_player:
+            return {
+                "id": existing_player.id, 
+                "username": existing_player.username, 
+                "authority": existing_player.authority_level,
+                "prelude": {"skipped": True, "reason": "Returning Commander"}
+            }
+        
         new_player = Player(username=req.username, prelude_seen=True)
         db.add(new_player)
         await db.commit()
         await db.refresh(new_player) # Ensure we get the ID back
+        
+        # Trigger Prelude
+        prelude_content = await narrator.generate_prelude(new_player.username)
+        
+        return {
+            "id": new_player.id, 
+            "username": new_player.username, 
+            "authority": new_player.authority_level,
+            "prelude": prelude_content
+        }
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         await db.rollback()
-        raise HTTPException(status_code=500, detail=f"Failed to create player: {str(e)}")
-    
-    # Trigger Prelude
-    prelude_content = await narrator.generate_prelude(new_player.username)
-    
-    return {
-        "id": new_player.id, 
-        "username": new_player.username, 
-        "authority": new_player.authority_level,
-        "prelude": prelude_content
-    }
+        raise HTTPException(status_code=500, detail=f"Failed to create player (Deep Error): {str(e)}")
 
 @router.get("/{player_id}", response_model=dict)
 async def get_player(player_id: UUID, db: AsyncSession = Depends(get_db)):
