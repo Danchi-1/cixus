@@ -40,6 +40,10 @@ const GameContainer = () => {
                 });
             } catch (err) {
                 console.error("Polling Error:", err);
+                if (err.response && err.response.status === 404) {
+                    alert("War session ended or not found. Returning to base.");
+                    navigate('/dashboard');
+                }
             }
         };
 
