@@ -12,6 +12,8 @@ from app.models.sitrep import SitRepLog
 from app.services.friction import AuthorityFrictionService
 from app.models.general import General
 from app.engine.types import GameState, UnitState
+from app.services.ai import AIOrchestrator
+from app.services.ai.context_builder import ContextBuilder
 from pydantic import BaseModel
 
 router = APIRouter()
