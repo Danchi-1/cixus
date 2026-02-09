@@ -28,6 +28,26 @@ class CommandRequest(BaseModel):
     type: str # "text" or "preset"
     content: str # "Attack left flank"
 
+@router.get("/active", response_model=list[dict])
+async def list_active_wars(player_id: UUID, db: AsyncSession = Depends(get_db)):
+    # Find all active wars for this player
+    from sqlalchemy import select
+    result = await db.execute(
+        select(WarSession)
+        .where(WarSession.player_id == player_id)
+        .where(WarSession.status == "ACTIVE")
+        .order_by(WarSession.created_at.desc())
+    )
+    wars = result.scalars().all()
+    return [
+        {
+            "war_id": w.id, 
+            "turn": w.turn_count, 
+            "created_at": w.created_at
+        } 
+        for w in wars
+    ]
+
 @router.post("/start", response_model=dict)
 async def start_war(req: CreateWarRequest, db: AsyncSession = Depends(get_db)):
     player = await db.get(Player, req.player_id)
