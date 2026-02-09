@@ -198,14 +198,14 @@ class AIOrchestrator:
         
         # Simple Keyword Heuristic (mocking the LLM behavior)
         if "ambush" in raw_lower: primary_pattern = "ambush"; risk_profile = "asymmetric"
-        elif "phalanx" in raw_lower: primary_pattern = "phalanx_defense"; risk_profile = "low"
+        elif "phalanx" in raw_lower or "dig in" in raw_lower or "defend" in raw_lower: primary_pattern = "phalanx_defense"; risk_profile = "low"
         elif "siege" in raw_lower: primary_pattern = "siege_attrition"; risk_profile = "low"
-        elif "psyops" in raw_lower: primary_pattern = "psychological_terror"; ethical_weight = "terror"
+        elif "psyops" in raw_lower or "suppress" in raw_lower: primary_pattern = "psychological_terror"; ethical_weight = "terror"
         elif "sacrifice" in raw_lower: primary_pattern = "sacrificial_charge"; ethical_weight = "sacrifice"; risk_profile = "reckless"
-        elif "blitz" in raw_lower: primary_pattern = "blitzkrieg_shock"; risk_profile = "decisive"
-        elif "feint" in raw_lower: primary_pattern = "deception_feint"; risk_profile = "calculated"
-        elif "retreat" in raw_lower: primary_pattern = "strategic_withdrawal"; risk_profile = "low"
-        elif "attack" in raw_lower: primary_pattern = "assault"; risk_profile = "decisive"
+        elif "blitz" in raw_lower or "charge" in raw_lower: primary_pattern = "blitzkrieg_shock"; risk_profile = "decisive"
+        elif "feint" in raw_lower or "recon" in raw_lower: primary_pattern = "deception_feint"; risk_profile = "calculated"
+        elif "retreat" in raw_lower or "hold fire" in raw_lower or "withdraw" in raw_lower: primary_pattern = "strategic_withdrawal"; risk_profile = "low"
+        elif "attack" in raw_lower or "flank" in raw_lower: primary_pattern = "assault"; risk_profile = "decisive"
         
         # 2. Detect Target (Sector)
         destination = {"x": 50.0, "z": 50.0} 
