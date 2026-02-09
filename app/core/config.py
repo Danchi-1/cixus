@@ -14,12 +14,10 @@ class Settings(BaseSettings):
     POSTGRES_DB: str = "cixus_rage"
     DATABASE_URL: str | None = None
 
-    # AI Keys (Mocked for now if empty)
-    OPENAI_API_KEY: str | None = None
     GEMINI_API_KEY: str | None = None
     
     # Security
-    SECRET_KEY: str = "CHANGE_ME_IN_PRODUCTION"
+    SECRET_KEY: str = "CHANGE_ME_IN_PRODUCTION" # Overridden by env var SECRET_KEY
     
     class Config:
         env_file = ".env"

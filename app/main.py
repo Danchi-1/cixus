@@ -36,3 +36,20 @@ app.include_router(war.router, prefix=f"{settings.API_V1_STR}/war", tags=["war"]
 @app.get("/")
 async def root():
     return {"message": "Cixus Rage Backend Online", "status": "Ready for War"}
+
+from sqlalchemy import text
+@app.get("/debug-db")
+async def debug_db():
+    try:
+        async with engine.connect() as conn:
+            # Check connection
+            await conn.execute(text("SELECT 1"))
+            # Check tables
+            tables = await conn.run_sync(lambda sync_conn: sync_conn.dialect.get_table_names(sync_conn))
+            return {
+                "status": "connected", 
+                "database_url_masked": settings.async_database_url.split("@")[-1] if "@" in settings.async_database_url else "sqlite",
+                "tables": tables
+            }
+    except Exception as e:
+        return {"status": "error", "message": str(e), "type": type(e).__name__}
