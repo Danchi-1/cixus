@@ -2,8 +2,17 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
-from app.api.v1 import war, player
-from app.db.base import engine, Base
+from app.api.v1 import war, player, system
+from app.db.base import init_db, engine, Base
+
+# Import Models explicitly to register them with Base.metadata
+# This fixes the circular import issue in app/db/base.py
+from app.models import player as player_model
+from app.models import war as war_model
+from app.models import action as action_model
+from app.models import authority as authority_model
+from app.models import general as general_model
+from app.models import sitrep as sitrep_model
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
