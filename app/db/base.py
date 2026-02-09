@@ -39,3 +39,12 @@ class Base(DeclarativeBase):
 async def get_db():
     async with SessionLocal() as session:
         yield session
+
+# Import models to ensure they are registered with Base.metadata
+# This prevents "mapper failed to initialize" errors
+from app.models.player import Player
+from app.models.war import WarSession
+from app.models.action import ActionLog
+from app.models.authority import AuthorityLog
+from app.models.general import General
+from app.models.sitrep import SitRepLog
