@@ -284,16 +284,18 @@ class AIOrchestrator:
             response = await model.generate_content_async(prompt)
             text = response.text
             
-            # Clean Markdown if present
-            if "```" in text:
-                text = text.replace("```json", "").replace("```", "").strip()
+            # Robust JSON extraction
+            import re
+            json_match = re.search(r"\{.*\}", text, re.DOTALL)
+            if json_match:
+                text = json_match.group(0)
                 
             try:
                 return json.loads(text)
             except json.JSONDecodeError:
                 print(f"JSON Parse Error. Raw: {text}")
                 return {
-                     "commentary": "Signal corrupted. Intelligence unintelligible.",
+                     "commentary": f"Signal corrupted. Raw: {text[:20]}...",
                      "authority_change": 0,
                      "morale_impact": "LOW"
                 }
@@ -301,7 +303,7 @@ class AIOrchestrator:
         except Exception as e:
             print(f"ERROR: Cixus Brain Failure: {e}")
             return {
-                "commentary": "Protocol Error. Judgment Suspended.",
+                "commentary": f"Protocol Error: {str(e)}",
                 "authority_change": 0,
                 "morale_impact": "LOW"
             }
