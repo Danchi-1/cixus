@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.api.v1 import war, player
 from app.db.base import engine, Base
+from sqlalchemy.ext.asyncio import AsyncSession
 import uuid
 
 # Import Models explicitly to register them with Base.metadata
