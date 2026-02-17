@@ -269,7 +269,7 @@ class AIOrchestrator:
 
         try:
             genai.configure(api_key=api_key)
-            model = genai.GenerativeModel('gemini-3.0-pro', 
+            model = genai.GenerativeModel('gemini-2.5-pro', 
                 generation_config={"response_mime_type": "application/json"}
             )
             
