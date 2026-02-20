@@ -1,34 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Shield, Activity, Skull, Terminal, Swords, AlertCircle, X } from 'lucide-react';
+import { Shield, Activity, Skull, Terminal, Swords } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api';
+import { ToastContainer, useToasts } from '../components/ErrorToast';
 
-const Notification = ({ message, type, onClose }) => {
-    return (
-        <motion.div
-            initial={{ opacity: 0, y: 50, scale: 0.9 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 20, scale: 0.9 }}
-            className={`
-                fixed bottom-8 right-8 z-50 p-4 rounded-sm border 
-                flex items-center gap-3 shadow-2xl backdrop-blur-md
-                ${type === 'error' ? 'bg-crimson-950/90 border-crimson-800 text-crimson-200' : 'bg-obsidian-900/90 border-gold-800 text-gold-200'}
-            `}
-        >
-            {type === 'error' ? <AlertCircle className="w-5 h-5 text-crimson-500" /> : <Activity className="w-5 h-5 text-gold-500" />}
-            <span className="font-mono text-sm">{message}</span>
-            <button onClick={onClose} className="hover:opacity-70"><X className="w-4 h-4" /></button>
-        </motion.div>
-    );
-};
 
 const Dashboard = () => {
     const navigate = useNavigate();
     const [player, setPlayer] = useState(null);
     const [loadingWar, setLoadingWar] = useState(false);
     const [activeWars, setActiveWars] = useState([]);
-    const [notification, setNotification] = useState(null); // { message, type }
+    const { toasts, pushToast, dismissToast } = useToasts();
 
     useEffect(() => {
         // Mock Auth Check (Replace with real API call later)
@@ -54,8 +37,7 @@ const Dashboard = () => {
     }, [navigate]);
 
     const showNotify = (msg, type = 'info') => {
-        setNotification({ message: msg, type });
-        setTimeout(() => setNotification(null), 4000);
+        pushToast({ message: msg, type });
     };
 
     const handleInitializeWar = async () => {
@@ -80,15 +62,7 @@ const Dashboard = () => {
     return (
         <div className="min-h-screen bg-obsidian-950 p-8 text-obsidian-500 overflow-hidden relative">
 
-            <AnimatePresence>
-                {notification && (
-                    <Notification
-                        message={notification.message}
-                        type={notification.type}
-                        onClose={() => setNotification(null)}
-                    />
-                )}
-            </AnimatePresence>
+            <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
             {/* Header */}
             <header className="flex justify-between items-center mb-12 border-b border-obsidian-800 pb-4">

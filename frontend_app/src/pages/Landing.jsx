@@ -3,11 +3,13 @@ import { motion } from 'framer-motion';
 import { ShieldAlert, ChevronRight, Skull, Target, Crosshair, Users } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api';
+import { ToastContainer, useToasts } from '../components/ErrorToast';
 
 const Landing = () => {
     const [hovered, setHovered] = useState(false);
     const [loading, setLoading] = useState(false);
     const navigate = useNavigate();
+    const { toasts, pushToast, dismissToast } = useToasts();
 
     const handleStartGame = async () => {
         setLoading(true);
@@ -27,7 +29,10 @@ const Landing = () => {
             navigate('/dashboard');
         } catch (error) {
             console.error("Connection Failed:", error);
-            alert("Server connection failed. Ensure backend is running.");
+            pushToast({
+                message: error.response?.data?.detail || 'Server connection failed. Ensure backend is running.',
+                type: 'error',
+            });
         } finally {
             setLoading(false);
         }
@@ -35,6 +40,7 @@ const Landing = () => {
 
     return (
         <div className="min-h-screen bg-obsidian-950 text-obsidian-500 overflow-x-hidden selection:bg-crimson-900 selection:text-white">
+            <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
             {/* Hero Section */}
             <section className="relative h-screen flex flex-col items-center justify-center overflow-hidden">

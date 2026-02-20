@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Terminal, Send, Shield, Activity, Map as MapIcon, ChevronLeft, Wifi, AlertTriangle } from 'lucide-react';
 import api from '../api';
+import { ToastContainer, useToasts } from '../components/ErrorToast';
 
 const GameContainer = () => {
     const { warId } = useParams();
@@ -15,6 +16,7 @@ const GameContainer = () => {
     ]);
     const [gameState, setGameState] = useState(null);
     const [isTransmitting, setIsTransmitting] = useState(false);
+    const { toasts, pushToast, dismissToast } = useToasts();
 
     const logsEndRef = useRef(null);
 
@@ -45,8 +47,17 @@ const GameContainer = () => {
             } catch (err) {
                 console.error("Polling Error:", err);
                 if (err.response && err.response.status === 404) {
-                    alert("War session ended or not found. Returning to base.");
-                    navigate('/dashboard');
+                    pushToast({
+                        message: 'War session not found or has ended. Returning to base.',
+                        type: 'warning',
+                        duration: 3000,
+                    });
+                    setTimeout(() => navigate('/dashboard'), 3200);
+                } else {
+                    pushToast({
+                        message: `Sync failure: ${err.response?.data?.detail || err.message}`,
+                        type: 'error',
+                    });
                 }
             }
         };
@@ -162,9 +173,12 @@ const GameContainer = () => {
             }
 
         } catch (err) {
+            const errMsg = err.response?.data?.detail || err.message;
+            // Also push a toast for visibility
+            pushToast({ message: `Transmission failed: ${errMsg}`, type: 'error' });
             setLogs(prev => [...prev, {
                 type: 'system',
-                text: `ERROR: ${err.response?.data?.detail || err.message}`
+                text: `ERROR: ${errMsg}`
             }]);
         } finally {
             setIsTransmitting(false);
@@ -174,10 +188,13 @@ const GameContainer = () => {
     return (
         <div className="h-screen bg-obsidian-950 flex flex-col overflow-hidden text-obsidian-300 font-mono relative">
 
+            <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+
             {/* Low Authority Glitch Overlay */}
             {isLowAuthority && (
                 <div className="absolute inset-0 pointer-events-none z-50 opacity-10 bg-[url('https://media.giphy.com/media/oEI9uBYSzLpBK/giphy.gif')] bg-cover mix-blend-overlay" />
             )}
+
 
             {/* Top Bar */}
             <header className="h-14 border-b border-obsidian-800 bg-obsidian-900/90 flex items-center justify-between px-6 shrink-0 backdrop-blur-md relative z-40">
