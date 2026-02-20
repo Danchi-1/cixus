@@ -2,6 +2,16 @@ from typing import List, Dict, Any
 import uuid
 from app.engine.types import GameCommand
 
+# Maps Google API status codes / exception types to clean in-world fallback messages
+_QUOTA_FALLBACK = (
+    "Cixus is silent. The neural link is saturated — too many minds, too little bandwidth. "
+    "Judgment deferred."
+)
+_API_FALLBACK = (
+    "The signal reached Cixus but returned distorted. "
+    "No judgment was rendered this cycle."
+)
+
 # CIXUS META-INTELLIGENCE PROMPT
 # The core personality of the game.
 CIXUS_SYSTEM_PROMPT = """
@@ -301,11 +311,32 @@ class AIOrchestrator:
                 }
             
         except Exception as e:
+            # Detect quota / rate-limit errors specifically so we don't leak
+            # raw Google API error walls of text to the frontend.
+            err_str = str(e).lower()
+            is_quota = (
+                "quota" in err_str
+                or "429" in err_str
+                or "resource_exhausted" in err_str
+                or "rate" in err_str
+                or "exceeded" in err_str
+            )
+
+            if is_quota:
+                print(f"WARNING: Gemini quota/rate-limit hit: {e}")
+                return {
+                    "commentary": _QUOTA_FALLBACK,
+                    "authority_change": 0,
+                    "morale_impact": "LOW",
+                    "enemy_reaction": "UNKNOWN"
+                }
+
             print(f"ERROR: Cixus Brain Failure: {e}")
             return {
-                "commentary": f"Protocol Error: {str(e)}",
+                "commentary": _API_FALLBACK,
                 "authority_change": 0,
-                "morale_impact": "LOW"
+                "morale_impact": "LOW",
+                "enemy_reaction": "UNKNOWN"
             }
 
     @staticmethod
