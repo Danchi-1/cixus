@@ -24,9 +24,11 @@ const Dashboard = () => {
                 setActiveWars(res.data);
             } catch (err) {
                 console.error('Failed to load wars:', err);
+                pushToast({ message: `Failed to load conflicts: ${err.response?.data?.detail || err.message}`, type: 'error' });
             }
         };
         fetchWars();
+
     }, [navigate]);
 
     const handleInitializeWar = async () => {
@@ -142,29 +144,44 @@ const Dashboard = () => {
                                 <Skull className="w-20 h-20 text-crimson-800" />
                             </div>
                             <h3 className="text-[10px] font-mono text-obsidian-600 uppercase tracking-widest mb-4">Reputation Metrics</h3>
-                            <div className="space-y-3">
-                                {[
-                                    { label: 'Ruthlessness', pct: 65, color: 'bg-crimson-700' },
-                                    { label: 'Tactics', pct: 40, color: 'bg-gold-600' },
-                                    { label: 'Morale', pct: 55, color: 'bg-obsidian-500' },
-                                ].map(({ label, pct, color }) => (
-                                    <div key={label}>
-                                        <div className="flex justify-between text-xs mb-1">
-                                            <span className="text-obsidian-500">{label}</span>
-                                            <span className="text-obsidian-600 font-mono">{pct}%</span>
-                                        </div>
-                                        <div className="w-full h-1.5 bg-obsidian-800 rounded-full overflow-hidden">
-                                            <motion.div
-                                                initial={{ width: 0 }}
-                                                animate={{ width: `${pct}%` }}
-                                                transition={{ duration: 0.8, delay: 0.2 }}
-                                                className={`h-full ${color} rounded-full`}
-                                            />
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
+
+                            {player.reputation && Object.keys(player.reputation).length > 0 ? (
+                                <div className="space-y-3">
+                                    {Object.entries(player.reputation)
+                                        .sort((a, b) => b[1] - a[1])
+                                        .slice(0, 5)
+                                        .map(([trait, value]) => {
+                                            // Values are 0–1 floats; clamp & convert to %
+                                            const pct = Math.min(100, Math.round(value * 100));
+                                            const isHigh = pct >= 60;
+                                            return (
+                                                <div key={trait}>
+                                                    <div className="flex justify-between text-xs mb-1">
+                                                        <span className="text-obsidian-500 capitalize">{trait}</span>
+                                                        <span className="text-obsidian-600 font-mono">{pct}%</span>
+                                                    </div>
+                                                    <div className="w-full h-1.5 bg-obsidian-800 rounded-full overflow-hidden">
+                                                        <motion.div
+                                                            initial={{ width: 0 }}
+                                                            animate={{ width: `${pct}%` }}
+                                                            transition={{ duration: 0.8, delay: 0.2 }}
+                                                            className={`h-full rounded-full ${isHigh ? 'bg-crimson-700' : 'bg-gold-600'}`}
+                                                        />
+                                                    </div>
+                                                </div>
+                                            );
+                                        })
+                                    }
+                                </div>
+                            ) : (
+                                <div className="text-center py-4">
+                                    <Skull className="w-8 h-8 text-obsidian-800 mx-auto mb-2" />
+                                    <p className="text-[10px] text-obsidian-700 font-mono uppercase tracking-widest">No Combat History</p>
+                                    <p className="text-[9px] text-obsidian-800 mt-1">Reputation builds through warfare.</p>
+                                </div>
+                            )}
                         </div>
+
 
                         {/* System logs card */}
                         <div className="bg-obsidian-900/30 border border-obsidian-800 p-5 rounded-sm hover:border-gold-900/30 transition-colors">

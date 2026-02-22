@@ -30,21 +30,21 @@ class CommandRequest(BaseModel):
 
 @router.get("/active", response_model=list[dict])
 async def list_active_wars(player_id: UUID, db: AsyncSession = Depends(get_db)):
-    # Find all active wars for this player
     from sqlalchemy import select
     result = await db.execute(
         select(WarSession)
         .where(WarSession.player_id == player_id)
         .where(WarSession.status == "ACTIVE")
-        .order_by(WarSession.created_at.desc())
+        .order_by(WarSession.started_at.desc())
     )
     wars = result.scalars().all()
     return [
         {
-            "war_id": w.id, 
-            "turn": w.turn_count, 
-            "created_at": w.created_at
-        } 
+            "war_id": str(w.id),
+            "turn": w.turn_count,
+            "created_at": w.started_at.isoformat() if w.started_at else None,
+            "status": w.status,
+        }
         for w in wars
     ]
 

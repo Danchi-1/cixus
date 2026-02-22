@@ -8,6 +8,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import api from '../api';
 import { ToastContainer, useToasts } from '../components/ErrorToast';
+import TacticsShowcase from '../components/TacticsShowcase';
 
 // ── Static data ────────────────────────────────────────────────────────────
 const HOW_IT_WORKS = [
@@ -367,7 +368,12 @@ const Landing = () => {
             </section>
 
             {/* ══════════════════════════════════════════════════════════════
-                6. FIELD REPORTS (Testimonials)
+                6. TACTICS SHOWCASE
+            ══════════════════════════════════════════════════════════════ */}
+            <TacticsShowcase />
+
+            {/* ══════════════════════════════════════════════════════════════
+                7. FIELD REPORTS (Testimonials)
             ══════════════════════════════════════════════════════════════ */}
             <section className="py-20 sm:py-28 px-4 border-b border-obsidian-800">
                 <div className="max-w-4xl mx-auto">

@@ -57,7 +57,6 @@ async def identify_player(request: Request, db: AsyncSession = Depends(get_db)):
         existing = result.scalars().first()
 
         if existing:
-            # Update last_seen_ip in case it changed (e.g. after VPN toggle)
             existing.last_seen_ip = ip
             await db.commit()
             return {
@@ -65,9 +64,12 @@ async def identify_player(request: Request, db: AsyncSession = Depends(get_db)):
                 "username": existing.username,
                 "authority_level": existing.authority_level,
                 "authority_points": existing.authority_points,
+                "reputation": existing.reputation or {},
+                "leadership_profile": existing.leadership_profile or {},
                 "returning": True,
                 "prelude": {"skipped": True, "reason": "Returning Commander"},
             }
+
 
         # ── 2. New player — generate callsign ────────────────────────────────
         # Ensure generated name is unique (retry on collision)
@@ -95,9 +97,12 @@ async def identify_player(request: Request, db: AsyncSession = Depends(get_db)):
             "username": new_player.username,
             "authority_level": new_player.authority_level,
             "authority_points": new_player.authority_points,
+            "reputation": new_player.reputation or {},
+            "leadership_profile": new_player.leadership_profile or {},
             "returning": False,
             "prelude": prelude_content,
         }
+
 
     except Exception as e:
         import traceback
