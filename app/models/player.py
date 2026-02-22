@@ -1,6 +1,7 @@
 from sqlalchemy import String, Integer, JSON, DateTime, Uuid, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
+from typing import Optional
 import uuid
 from datetime import datetime
 from app.db.base import Base
@@ -10,6 +11,10 @@ class Player(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     username: Mapped[str] = mapped_column(String, unique=True, index=True)
+
+    # IP-based identity — primary auth mechanism
+    ip_address: Mapped[Optional[str]] = mapped_column(String, unique=True, index=True, nullable=True)
+    last_seen_ip: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # tracks if IP changed
     
     # Authority System
     authority_level: Mapped[int] = mapped_column(Integer, default=1)

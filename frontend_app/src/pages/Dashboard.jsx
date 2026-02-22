@@ -1,10 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Shield, Activity, Skull, Terminal, Swords } from 'lucide-react';
+import { Shield, Activity, Skull, Terminal, Swords, ChevronRight, LogOut, Wifi } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api';
 import { ToastContainer, useToasts } from '../components/ErrorToast';
-
 
 const Dashboard = () => {
     const navigate = useNavigate();
@@ -14,198 +13,267 @@ const Dashboard = () => {
     const { toasts, pushToast, dismissToast } = useToasts();
 
     useEffect(() => {
-        // Mock Auth Check (Replace with real API call later)
         const storedPlayer = localStorage.getItem('cixus_player');
-        if (!storedPlayer) {
-            navigate('/');
-            return;
-        }
+        if (!storedPlayer) { navigate('/'); return; }
         const parsedPlayer = JSON.parse(storedPlayer);
         setPlayer(parsedPlayer);
 
-        // Fetch Active Wars
         const fetchWars = async () => {
             try {
                 const res = await api.get(`/api/v1/war/active?player_id=${parsedPlayer.id}`);
                 setActiveWars(res.data);
             } catch (err) {
-                console.error("Failed to load wars:", err);
+                console.error('Failed to load wars:', err);
             }
         };
         fetchWars();
-
     }, [navigate]);
-
-    const showNotify = (msg, type = 'info') => {
-        pushToast({ message: msg, type });
-    };
 
     const handleInitializeWar = async () => {
         if (!player) return;
         setLoadingWar(true);
         try {
-            const res = await api.post("/api/v1/war/start", {
-                player_id: player.id,
-                difficulty: 1
-            });
-            showNotify(`Conflict Initialized: Session ${res.data.war_id.substring(0, 8)}...`, 'success');
-            setTimeout(() => navigate(`/war/${res.data.war_id}`), 1500); // Short delay for toast read
+            const res = await api.post('/api/v1/war/start', { player_id: player.id, difficulty: 1 });
+            pushToast({ message: `Conflict Initialized: Session ${res.data.war_id.substring(0, 8)}...`, type: 'success' });
+            setTimeout(() => navigate(`/war/${res.data.war_id}`), 1200);
         } catch (err) {
-            showNotify(`Initialization Failed: ${err.message}`, 'error');
+            pushToast({ message: `Initialization Failed: ${err.message}`, type: 'error' });
         } finally {
             setLoadingWar(false);
         }
     };
 
+    const handleDisconnect = () => {
+        localStorage.removeItem('cixus_player');
+        navigate('/');
+    };
+
     if (!player) return null;
 
-    return (
-        <div className="min-h-screen bg-obsidian-950 p-8 text-obsidian-500 overflow-hidden relative">
+    const authorityPct = Math.min(100, ((player.authority_points || 100) / 200) * 100);
 
+    return (
+        <div className="min-h-screen bg-obsidian-950 text-obsidian-500 overflow-x-hidden">
             <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
-            {/* Header */}
-            <header className="flex justify-between items-center mb-12 border-b border-obsidian-800 pb-4">
-                <div>
-                    <h1 className="text-2xl font-bold tracking-tighter text-obsidian-400">
-                        COMMANDER <span className="text-crimson-600">{player.username.toUpperCase()}</span>
-                    </h1>
-                    <p className="text-xs font-mono text-obsidian-600 tracking-widest mt-1">
-                        AUTHORITY LEVEL: {player.authority_level || 1} // STATUS: ACTIVE
-                    </p>
-                </div>
-                <div className="flex gap-4">
-                    <div className="flex items-center gap-2 px-4 py-2 bg-obsidian-900 border border-obsidian-800 rounded-sm">
-                        <Shield className="w-4 h-4 text-gold-500" />
-                        <span className="font-mono text-sm text-gold-500">{player.authority_points || 100} AP</span>
+            {/* ── HEADER ─────────────────────────────────────────────────── */}
+            <header className="sticky top-0 z-40 bg-obsidian-950/90 backdrop-blur-md border-b border-obsidian-800">
+                <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
+
+                    {/* Identity */}
+                    <div className="min-w-0">
+                        <h1 className="text-base sm:text-xl font-bold tracking-tighter text-obsidian-300 truncate">
+                            CDR <span className="text-crimson-600">{player.username?.toUpperCase()}</span>
+                        </h1>
+                        <p className="text-[9px] sm:text-[10px] font-mono text-obsidian-700 tracking-widest uppercase">
+                            LVL {player.authority_level || 1} // ACTIVE
+                        </p>
                     </div>
-                    <button
-                        onClick={() => navigate('/')}
-                        className="px-4 py-2 bg-obsidian-900/50 border border-obsidian-800 text-obsidian-500 hover:text-obsidian-300 hover:bg-obsidian-800 active:scale-95 transition-all duration-150 text-xs font-mono uppercase cursor-pointer"
-                    >
-                        Disconnect
-                    </button>
+
+                    {/* Right controls */}
+                    <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+                        {/* AP badge */}
+                        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-obsidian-900 border border-obsidian-800 rounded-sm">
+                            <Shield className="w-3.5 h-3.5 text-gold-500 shrink-0" />
+                            <span className="font-mono text-xs text-gold-500 whitespace-nowrap">{player.authority_points || 100} AP</span>
+                        </div>
+                        {/* Disconnect */}
+                        <button
+                            onClick={handleDisconnect}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-obsidian-900/50 border border-obsidian-800 text-obsidian-500 hover:text-crimson-400 hover:border-crimson-900 active:scale-95 transition-all text-[10px] font-mono uppercase rounded-sm"
+                        >
+                            <LogOut className="w-3.5 h-3.5" />
+                            <span className="hidden sm:inline">Disconnect</span>
+                        </button>
+                    </div>
                 </div>
             </header>
 
-            {/* Main Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {/* ── BODY ────────────────────────────────────────────────────── */}
+            <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-10 space-y-6">
 
-                {/* Left Column: Stats & Profile */}
+                {/* ── AUTHORITY BANNER (mobile full-width card) ───────────── */}
                 <motion.div
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    className="space-y-6"
-                >
-                    {/* Reputation Card */}
-                    <motion.div
-                        whileHover={{ y: -5 }}
-                        className="bg-obsidian-900/50 border border-obsidian-800 p-6 rounded-sm relative overflow-hidden group transition-colors hover:border-crimson-900/50"
-                    >
-                        <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                            <Skull className="w-24 h-24 text-crimson-900" />
-                        </div>
-                        <h3 className="text-sm font-mono text-obsidian-600 uppercase mb-4">Reputation Metrics</h3>
-                        <div className="space-y-4">
-                            <div className="flex justify-between text-sm">
-                                <span>Ruthlessness</span>
-                                <div className="w-32 h-2 bg-obsidian-800 rounded-full overflow-hidden">
-                                    <div className="h-full bg-crimson-700 w-[65%]"></div>
-                                </div>
-                            </div>
-                            <div className="flex justify-between text-sm">
-                                <span>Tactics</span>
-                                <div className="w-32 h-2 bg-obsidian-800 rounded-full overflow-hidden">
-                                    <div className="h-full bg-gold-600 w-[40%]"></div>
-                                </div>
-                            </div>
-                        </div>
-                    </motion.div>
-
-                    {/* Recent Comms */}
-                    <motion.div
-                        whileHover={{ y: -5 }}
-                        className="bg-obsidian-900/30 border border-obsidian-800 p-6 rounded-sm transition-colors hover:border-gold-900/30"
-                    >
-                        <h3 className="flex items-center gap-2 text-sm font-mono text-obsidian-600 uppercase mb-4">
-                            <Terminal className="w-4 h-4" /> System Logs
-                        </h3>
-                        <div className="space-y-2 text-xs font-mono text-obsidian-500">
-                            <p>&gt; Connection established...</p>
-                            <p>&gt; Synchronizing neural link...</p>
-                            <p>&gt; <span className="text-crimson-600">WARNING:</span> Enemy movement detected in Sector 4.</p>
-                        </div>
-                    </motion.div>
-                </motion.div>
-
-                {/* Center Column: Active Conflicts */}
-                <motion.div
-                    initial={{ opacity: 0, y: 20 }}
+                    initial={{ opacity: 0, y: -10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.1 }}
-                    className="lg:col-span-2"
+                    className="bg-obsidian-900/60 border border-obsidian-800 rounded-sm p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center gap-4"
                 >
-                    <div className="flex justify-between items-end mb-6">
-                        <h2 className="text-xl font-bold tracking-tight text-obsidian-400 flex items-center gap-2">
-                            <Activity className="w-5 h-5 text-crimson-600" /> ACTIVE CONFLICTS
-                        </h2>
-                        <motion.button
-                            whileHover={{ scale: 1.05, backgroundColor: "rgba(69, 14, 14, 0.4)" }}
-                            whileTap={{ scale: 0.95 }}
-                            onClick={handleInitializeWar}
-                            disabled={loadingWar}
-                            className={`
-                                px-6 py-2 bg-crimson-900/20 border border-crimson-800 text-crimson-500 
-                                transition-all duration-300 text-sm font-mono uppercase tracking-wider 
-                                flex items-center gap-2 cursor-pointer select-none 
-                                shadow-[0_0_10px_rgba(220,38,38,0.1)] hover:shadow-[0_0_20px_rgba(220,38,38,0.3)]
-                                ${loadingWar ? 'opacity-50 cursor-wait' : ''}
-                            `}
-                        >
-                            <Swords className={`w-4 h-4 ${loadingWar ? 'animate-spin' : ''}`} />
-                            {loadingWar ? 'INITIALIZING...' : 'INITIALIZE CONFLICT'}
-                        </motion.button>
-                    </div>
-
-                    {/* War List */}
-                    {activeWars.length > 0 ? (
-                        <div className="grid gap-4">
-                            {activeWars.map(war => (
-                                <motion.div
-                                    key={war.war_id}
-                                    initial={{ opacity: 0, x: -10 }}
-                                    animate={{ opacity: 1, x: 0 }}
-                                    onClick={() => navigate(`/war/${war.war_id}`)}
-                                    className="bg-obsidian-900/40 border border-obsidian-800 p-4 rounded-sm flex justify-between items-center cursor-pointer hover:bg-obsidian-800/60 hover:border-gold-800/50 transition-all group"
-                                >
-                                    <div>
-                                        <h4 className="text-sm font-bold text-obsidian-300 group-hover:text-gold-400 transition-colors">
-                                            OPERATION {war.war_id.substring(0, 8).toUpperCase()}
-                                        </h4>
-                                        <p className="text-xs font-mono text-obsidian-600 mt-1">
-                                            TURN {war.turn} // DEPLOYED {new Date(war.created_at).toLocaleDateString()}
-                                        </p>
-                                    </div>
-                                    <div className="px-3 py-1 bg-green-900/20 text-green-500 text-[10px] font-bold tracking-widest border border-green-900/50 rounded-sm">
-                                        ACTIVE
-                                    </div>
-                                </motion.div>
-                            ))}
-                        </div>
-                    ) : (
-                        <div className="border border-dashed border-obsidian-800 rounded-sm p-12 flex flex-col items-center justify-center text-center bg-obsidian-900/20">
-                            <div className="w-16 h-16 bg-obsidian-800 rounded-full flex items-center justify-center mb-4 text-obsidian-600">
-                                <Activity className="w-8 h-8" />
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                        <Wifi className="w-4 h-4 text-gold-500 shrink-0" />
+                        <div className="flex-1 min-w-0">
+                            <div className="flex justify-between text-[9px] font-bold tracking-widest text-obsidian-500 uppercase mb-1.5">
+                                <span>Neural Sync Stability</span>
+                                <span className="text-gold-500">{player.authority_points || 100} / 200</span>
                             </div>
-                            <h3 className="text-lg font-medium text-obsidian-500 mb-2">NO ACTIVE CAMPAIGNS</h3>
-                            <p className="max-w-md text-obsidian-600 text-sm mb-6">
-                                Peace is a momentary graphical glitch. Initialize a war campaign to begin conquest.
-                            </p>
+                            <div className="w-full h-1.5 bg-obsidian-800 rounded-full overflow-hidden">
+                                <motion.div
+                                    initial={{ width: 0 }}
+                                    animate={{ width: `${authorityPct}%` }}
+                                    transition={{ duration: 1, ease: 'easeOut' }}
+                                    className="h-full bg-gold-500 rounded-full"
+                                />
+                            </div>
                         </div>
-                    )}
+                    </div>
+                    <div className="flex gap-2 shrink-0">
+                        {['RUTHLESS', 'PRECISE', 'FEARED'].map((tag, i) => (
+                            <span key={tag} className={`px-2 py-0.5 text-[8px] font-bold tracking-widest border rounded-sm
+                                ${i === 0 ? 'border-crimson-900/60 text-crimson-700 bg-crimson-950/30' :
+                                    i === 1 ? 'border-gold-900/60 text-gold-700 bg-gold-950/20' :
+                                        'border-obsidian-700 text-obsidian-600'}`}>
+                                {tag}
+                            </span>
+                        ))}
+                    </div>
                 </motion.div>
 
-            </div>
+                {/* ── MAIN GRID: stacked on mobile, 3-col on desktop ──────── */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+                    {/* ── LEFT SIDEBAR ──────────────────────────────────────── */}
+                    <motion.div
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        className="space-y-4 lg:space-y-5"
+                    >
+                        {/* Reputation card */}
+                        <div className="bg-obsidian-900/50 border border-obsidian-800 p-5 rounded-sm relative overflow-hidden group hover:border-crimson-900/50 transition-colors">
+                            <div className="absolute top-0 right-0 p-3 opacity-5 group-hover:opacity-15 transition-opacity pointer-events-none">
+                                <Skull className="w-20 h-20 text-crimson-800" />
+                            </div>
+                            <h3 className="text-[10px] font-mono text-obsidian-600 uppercase tracking-widest mb-4">Reputation Metrics</h3>
+                            <div className="space-y-3">
+                                {[
+                                    { label: 'Ruthlessness', pct: 65, color: 'bg-crimson-700' },
+                                    { label: 'Tactics', pct: 40, color: 'bg-gold-600' },
+                                    { label: 'Morale', pct: 55, color: 'bg-obsidian-500' },
+                                ].map(({ label, pct, color }) => (
+                                    <div key={label}>
+                                        <div className="flex justify-between text-xs mb-1">
+                                            <span className="text-obsidian-500">{label}</span>
+                                            <span className="text-obsidian-600 font-mono">{pct}%</span>
+                                        </div>
+                                        <div className="w-full h-1.5 bg-obsidian-800 rounded-full overflow-hidden">
+                                            <motion.div
+                                                initial={{ width: 0 }}
+                                                animate={{ width: `${pct}%` }}
+                                                transition={{ duration: 0.8, delay: 0.2 }}
+                                                className={`h-full ${color} rounded-full`}
+                                            />
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* System logs card */}
+                        <div className="bg-obsidian-900/30 border border-obsidian-800 p-5 rounded-sm hover:border-gold-900/30 transition-colors">
+                            <h3 className="flex items-center gap-2 text-[10px] font-mono text-obsidian-600 uppercase tracking-widest mb-3">
+                                <Terminal className="w-3.5 h-3.5" /> System Logs
+                            </h3>
+                            <div className="space-y-1.5 text-[10px] sm:text-xs font-mono text-obsidian-600">
+                                <p>&gt; Connection established...</p>
+                                <p>&gt; Synchronizing neural link...</p>
+                                <p>&gt; <span className="text-crimson-600">WARNING:</span> Enemy movement detected.</p>
+                                <p className="text-obsidian-700">&gt; Cixus observing. Awaiting command.</p>
+                            </div>
+                        </div>
+                    </motion.div>
+
+                    {/* ── ACTIVE CONFLICTS (takes 2 cols on desktop) ────────── */}
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.1 }}
+                        className="lg:col-span-2 flex flex-col gap-4"
+                    >
+                        {/* Section header */}
+                        <div className="flex items-center justify-between gap-3">
+                            <h2 className="text-base sm:text-lg font-bold tracking-tight text-obsidian-400 flex items-center gap-2 min-w-0">
+                                <Activity className="w-4 h-4 text-crimson-600 shrink-0" />
+                                <span className="truncate">ACTIVE CONFLICTS</span>
+                                {activeWars.length > 0 && (
+                                    <span className="ml-1 px-1.5 py-0.5 text-[9px] font-bold bg-crimson-900/30 border border-crimson-800/50 text-crimson-500 rounded-sm shrink-0">
+                                        {activeWars.length}
+                                    </span>
+                                )}
+                            </h2>
+
+                            {/* Initialize button — full width on mobile */}
+                            <motion.button
+                                whileTap={{ scale: 0.95 }}
+                                onClick={handleInitializeWar}
+                                disabled={loadingWar}
+                                className={`
+                                    flex items-center gap-2 px-4 sm:px-5 py-2 shrink-0
+                                    bg-crimson-900/20 border border-crimson-800 text-crimson-500
+                                    transition-all duration-200 text-xs font-mono uppercase tracking-wider
+                                    hover:bg-crimson-900/40 hover:shadow-[0_0_20px_rgba(176,37,37,0.25)]
+                                    active:scale-95 rounded-sm
+                                    ${loadingWar ? 'opacity-50 cursor-wait' : 'cursor-pointer'}
+                                `}
+                            >
+                                <Swords className={`w-3.5 h-3.5 shrink-0 ${loadingWar ? 'animate-spin' : ''}`} />
+                                <span className="whitespace-nowrap">{loadingWar ? 'INITIALIZING...' : 'NEW CONFLICT'}</span>
+                            </motion.button>
+                        </div>
+
+                        {/* War list */}
+                        {activeWars.length > 0 ? (
+                            <div className="grid gap-3">
+                                {activeWars.map((war, idx) => (
+                                    <motion.div
+                                        key={war.war_id}
+                                        initial={{ opacity: 0, y: 10 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        transition={{ delay: idx * 0.05 }}
+                                        onClick={() => navigate(`/war/${war.war_id}`)}
+                                        className="bg-obsidian-900/40 border border-obsidian-800 p-4 rounded-sm flex items-center justify-between gap-4 cursor-pointer hover:bg-obsidian-800/50 hover:border-gold-800/40 transition-all group"
+                                    >
+                                        <div className="min-w-0">
+                                            <h4 className="text-sm font-bold text-obsidian-300 group-hover:text-gold-400 transition-colors truncate">
+                                                OPERATION {war.war_id.substring(0, 8).toUpperCase()}
+                                            </h4>
+                                            <p className="text-[10px] font-mono text-obsidian-600 mt-0.5">
+                                                T-{war.turn} // {new Date(war.created_at).toLocaleDateString()}
+                                            </p>
+                                        </div>
+                                        <div className="flex items-center gap-3 shrink-0">
+                                            <div className="px-2.5 py-1 bg-green-900/20 text-green-500 text-[9px] font-bold tracking-widest border border-green-900/50 rounded-sm">
+                                                ACTIVE
+                                            </div>
+                                            <ChevronRight className="w-4 h-4 text-obsidian-600 group-hover:text-gold-500 transition-colors" />
+                                        </div>
+                                    </motion.div>
+                                ))}
+                            </div>
+                        ) : (
+                            <motion.div
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                className="flex-1 border border-dashed border-obsidian-800 rounded-sm p-8 sm:p-14 flex flex-col items-center justify-center text-center bg-obsidian-900/10"
+                            >
+                                <div className="w-14 h-14 bg-obsidian-900 rounded-full flex items-center justify-center mb-4 border border-obsidian-800">
+                                    <Activity className="w-7 h-7 text-obsidian-700" />
+                                </div>
+                                <h3 className="text-sm font-mono font-bold text-obsidian-600 uppercase tracking-widest mb-2">No Active Campaigns</h3>
+                                <p className="text-obsidian-700 text-xs max-w-xs mb-6 leading-relaxed">
+                                    Peace is a momentary graphical glitch. Initialize a conflict to begin conquest.
+                                </p>
+                                <motion.button
+                                    whileTap={{ scale: 0.95 }}
+                                    onClick={handleInitializeWar}
+                                    disabled={loadingWar}
+                                    className="flex items-center gap-2 px-6 py-2.5 bg-crimson-900/20 border border-crimson-800 text-crimson-500 text-xs font-mono uppercase tracking-wider hover:bg-crimson-900/40 transition-all rounded-sm"
+                                >
+                                    <Swords className="w-3.5 h-3.5" />
+                                    {loadingWar ? 'INITIALIZING...' : 'BEGIN CAMPAIGN'}
+                                </motion.button>
+                            </motion.div>
+                        )}
+                    </motion.div>
+                </div>
+            </main>
         </div>
     );
 };

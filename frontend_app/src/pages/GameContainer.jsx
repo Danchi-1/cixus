@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -10,7 +10,8 @@ import api from '../api';
 import { ToastContainer, useToasts } from '../components/ErrorToast';
 import TypewriterText from '../components/TypewriterText';
 
-// ─── Enemy comms intercepts ────────────────────────────────────────────────────
+// ── Constants (module-level, never recreated) ─────────────────────────────────
+
 const COMMS_INTERCEPTS = [
     'SECTOR 4 FLANK UNGUARDED — ADVANCE RECOMMENDED',
     'REQUESTING REINFORCEMENT AT GRID 7-7',
@@ -31,22 +32,6 @@ const COMMS_INTERCEPTS = [
     'SUSPECTED SPY IN BATTALION C — DO NOT CONFIRM VIA OPEN CHANNEL',
 ];
 
-// ─── War Phase ─────────────────────────────────────────────────────────────────
-const getWarPhase = (turn = 0) => {
-    if (turn < 5) return { label: 'EARLY CONFLICT', color: 'text-gold-500', border: 'border-gold-700/60', pulse: false };
-    if (turn < 15) return { label: 'ENGAGEMENT', color: 'text-crimson-500', border: 'border-crimson-700/60', pulse: false };
-    return { label: 'CRITICAL PHASE', color: 'text-crimson-400', border: 'border-crimson-600', pulse: true };
-};
-
-// ─── Fog of War ────────────────────────────────────────────────────────────────
-const isFogVisible = (enemy, friendlyUnits, threshold = 28) =>
-    friendlyUnits.some(f => {
-        const dx = f.position.x - enemy.position.x;
-        const dz = (f.position.z ?? f.position.y ?? 50) - (enemy.position.z ?? enemy.position.y ?? 50);
-        return Math.sqrt(dx * dx + dz * dz) <= threshold;
-    });
-
-// ─── Tactical command definitions ──────────────────────────────────────────────
 const TACTICAL_COMMANDS = [
     { cmd: 'FLANK LEFT', icon: ArrowLeft, color: 'gold' },
     { cmd: 'FLANK RIGHT', icon: ArrowRight, color: 'gold' },
@@ -59,53 +44,182 @@ const TACTICAL_COMMANDS = [
 ];
 
 const CMD_COLORS = {
-    gold: 'border-gold-700/60 text-gold-500    hover:bg-gold-900/30    hover:border-gold-600    active:bg-gold-900/60',
+    gold: 'border-gold-700/60 text-gold-500 hover:bg-gold-900/30 hover:border-gold-600 active:bg-gold-900/60',
     crimson: 'border-crimson-700/60 text-crimson-500 hover:bg-crimson-900/30 hover:border-crimson-600 active:bg-crimson-900/60',
     obsidian: 'border-obsidian-700 text-obsidian-400 hover:bg-obsidian-800/60 hover:border-obsidian-600 hover:text-obsidian-200 active:bg-obsidian-800',
 };
 
-// ── Mobile tabs ──────────────────────────────────────────────────────────────
 const TABS = [
     { id: 'orders', label: 'ORDERS', Icon: LayoutGrid },
     { id: 'log', label: 'LOG', Icon: List },
     { id: 'extreme', label: '⚡ EXTREME', Icon: Zap },
 ];
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Pure helper functions ─────────────────────────────────────────────────────
+
+const getWarPhase = (turn = 0) => {
+    if (turn < 5) return { label: 'EARLY CONFLICT', color: 'text-gold-500', border: 'border-gold-700/60', pulse: false };
+    if (turn < 15) return { label: 'ENGAGEMENT', color: 'text-crimson-500', border: 'border-crimson-700/60', pulse: false };
+    return { label: 'CRITICAL PHASE', color: 'text-crimson-400', border: 'border-crimson-600', pulse: true };
+};
+
+const isFogVisible = (enemy, friendlyUnits, threshold = 28) =>
+    friendlyUnits.some(f => {
+        const dx = f.position.x - enemy.position.x;
+        const dz = (f.position.z ?? f.position.y ?? 50) - (enemy.position.z ?? enemy.position.y ?? 50);
+        return Math.sqrt(dx * dx + dz * dz) <= threshold;
+    });
+
+// ── Sub-components (module-level — NEVER defined inside GameContainer) ────────
+// Defining these outside prevents remount on every parent re-render.
+// Each is wrapped in React.memo so they only re-render when their own props change.
+
+const CommandGrid = memo(({ onCommand, isTransmitting }) => (
+    <div className="grid grid-cols-2 gap-2 p-4">
+        {TACTICAL_COMMANDS.map(({ cmd, icon: Icon, color }) => (
+            <button
+                key={cmd}
+                onClick={() => onCommand(cmd)}
+                disabled={isTransmitting}
+                className={`
+                    flex items-center gap-3 px-4 py-3.5 border rounded-sm font-mono text-xs
+                    font-bold tracking-wider uppercase transition-all duration-150
+                    disabled:opacity-40 disabled:cursor-not-allowed select-none
+                    active:scale-95 ${CMD_COLORS[color]}
+                `}
+            >
+                <Icon className="w-4 h-4 shrink-0" />
+                {cmd}
+            </button>
+        ))}
+    </div>
+));
+CommandGrid.displayName = 'CommandGrid';
+
+const LogPanel = memo(({ logs, logsEndRef }) => (
+    <div className="flex-1 overflow-y-auto p-4 space-y-3 text-xs font-mono scrollbar-thin scrollbar-thumb-obsidian-700 scrollbar-track-transparent">
+        {logs.map((log) => (
+            <motion.div
+                key={log.id}
+                initial={{ opacity: 0, x: 10 }}
+                animate={{ opacity: 1, x: 0 }}
+                className={`
+                    p-3 rounded-sm border-l-2 relative overflow-hidden
+                    ${log.type === 'user' ? 'bg-obsidian-800/50 border-gold-600/50 text-gold-100 ml-6' : ''}
+                    ${log.type === 'system' ? 'border-obsidian-600 text-obsidian-400' : ''}
+                    ${log.type === 'system' && log.isRefusal ? 'bg-crimson-950/20 border-crimson-500 text-crimson-400' : ''}
+                    ${log.type === 'system' && log.isSitrep ? 'border-obsidian-500 text-obsidian-300 font-sans italic tracking-wide' : ''}
+                    ${log.type === 'cixus' ? 'bg-crimson-950/40 border-crimson-600 border-l-4 text-crimson-200 shadow-[inset_0_0_20px_rgba(153,27,27,0.1)]' : ''}
+                `}
+            >
+                {log.type === 'cixus' && (
+                    <div className="absolute top-0 right-0 p-1 opacity-20 pointer-events-none">
+                        <Activity className="w-8 h-8 text-crimson-600" />
+                    </div>
+                )}
+                <div className="flex justify-between items-start mb-1">
+                    <span className="text-[9px] opacity-60 uppercase tracking-widest">{log.type}</span>
+                    {log.delta && (
+                        <span className={`text-[9px] font-bold ${log.delta > 0 ? 'text-green-500' : 'text-crimson-500'}`}>
+                            {log.delta > 0 ? '+' : ''}{log.delta} SYNC
+                        </span>
+                    )}
+                </div>
+                {log.type === 'cixus' && log.animate
+                    ? <p className="leading-relaxed z-10 relative"><TypewriterText text={log.text} speed={20} /></p>
+                    : <p className="leading-relaxed z-10 relative">{log.text}</p>
+                }
+            </motion.div>
+        ))}
+        <div ref={logsEndRef} />
+    </div>
+));
+LogPanel.displayName = 'LogPanel';
+
+const ExtremePanel = memo(({ extremeCmd, setExtremeCmd, onSubmit, isTransmitting, isLowAuth, compact = false }) => (
+    <form onSubmit={onSubmit} className={compact ? 'p-3' : 'p-4'}>
+        <div className="mb-3 flex items-center gap-2">
+            <Zap className="w-3.5 h-3.5 text-gold-500" />
+            <span className="text-[9px] tracking-[0.2em] text-gold-600 uppercase font-bold">Extreme Command — AI Interpreted</span>
+        </div>
+        <p className="text-[9px] text-obsidian-600 mb-3 leading-relaxed">
+            For complex multi-unit orders or unconventional tactics. Cixus will judge harshly.
+        </p>
+        <div className="relative">
+            <input
+                type="text"
+                value={extremeCmd}
+                onChange={e => setExtremeCmd(e.target.value)}
+                placeholder={isLowAuth ? 'SIGNAL UNSTABLE...' : 'Describe your order in detail...'}
+                disabled={isTransmitting}
+                className={`
+                    w-full bg-obsidian-950 border rounded-sm py-3 pl-4 pr-12 text-sm text-white
+                    placeholder-obsidian-700 outline-none transition-colors duration-200
+                    ${isLowAuth
+                        ? 'border-crimson-800 focus:border-crimson-500'
+                        : 'border-gold-900/50 focus:border-gold-600'
+                    }
+                    ${isTransmitting ? 'opacity-50 cursor-not-allowed' : ''}
+                `}
+                autoFocus={!compact}
+            />
+            <button
+                type="submit"
+                disabled={isTransmitting || !extremeCmd.trim()}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-gold-700 hover:text-gold-400 disabled:opacity-30 transition-colors"
+            >
+                {isTransmitting ? <Activity className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+            </button>
+        </div>
+        <p className="text-[8px] text-obsidian-700 mt-2 flex items-center gap-1">
+            <AlertTriangle className="w-2.5 h-2.5" /> Extreme commands invoke full Cixus judgment
+        </p>
+    </form>
+));
+ExtremePanel.displayName = 'ExtremePanel';
+
+// ── Main component ────────────────────────────────────────────────────────────
 
 const GameContainer = () => {
     const { warId } = useParams();
     const navigate = useNavigate();
 
+    // Stable log IDs — use a counter ref so they don't cause re-renders
+    const logIdRef = useRef(0);
+    const makeLog = (fields) => ({ id: ++logIdRef.current, ...fields });
+
     const [extremeCmd, setExtremeCmd] = useState('');
-    const [logs, setLogs] = useState([
-        { type: 'system', text: 'Connection established to Cixus Command Core.' },
-        { type: 'system', text: 'Battlefield rendering...' },
-        { type: 'cixus', text: 'The enemy is waiting, Commander. Do not hesitate.' },
+    const [logs, setLogs] = useState(() => [
+        makeLog({ type: 'system', text: 'Connection established to Cixus Command Core.' }),
+        makeLog({ type: 'system', text: 'Battlefield rendering...' }),
+        makeLog({ type: 'cixus', text: 'The enemy is waiting, Commander. Do not hesitate.' }),
     ]);
     const [gameState, setGameState] = useState(null);
     const [isTransmitting, setIsTransmitting] = useState(false);
     const [fogEnabled, setFogEnabled] = useState(true);
     const [selectedUnit, setSelectedUnit] = useState(null);
     const [enemyComms, setEnemyComms] = useState([]);
-    const [activeTab, setActiveTab] = useState('orders');   // mobile tab
-    const [extremeOpen, setExtremeOpen] = useState(false);      // desktop toggle
+    const [activeTab, setActiveTab] = useState('orders');
+    const [extremeOpen, setExtremeOpen] = useState(false);
 
     const { toasts, pushToast, dismissToast } = useToasts();
     const logsEndRef = useRef(null);
     const mapRef = useRef(null);
 
-    // Scroll log to bottom on new entries
-    useEffect(() => { logsEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [logs]);
+    // Scroll on new log — only when logs array length changes
+    const logsLength = logs.length;
+    useEffect(() => {
+        logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [logsLength]);
 
-    // Dismiss unit inspector on Escape
+    // Escape key dismisses unit inspector
     useEffect(() => {
         const onKey = e => { if (e.key === 'Escape') setSelectedUnit(null); };
         window.addEventListener('keydown', onKey);
         return () => window.removeEventListener('keydown', onKey);
     }, []);
 
-    // Enemy comms intercept ticker
+    // Enemy comms ticker
     useEffect(() => {
         const timerRef = { current: null };
         const scheduleNext = () => {
@@ -121,14 +235,13 @@ const GameContainer = () => {
         return () => clearTimeout(timerRef.current);
     }, []);
 
-    // Poll game state
+    // Poll game state — updating ONLY gameState, never logs
     useEffect(() => {
         if (!warId) return;
         const fetchState = async () => {
             try {
                 const res = await api.get(`/api/v1/war/${warId}/state`);
-                setGameState(prev => ({
-                    ...prev,
+                setGameState({
                     turn: res.data.turn_count,
                     player_authority: 100,
                     status: res.data.general_status,
@@ -136,7 +249,7 @@ const GameContainer = () => {
                         ...res.data.player_units,
                         ...(res.data.enemy_units || []).map(u => ({ ...u, isEnemy: true })),
                     ],
-                }));
+                });
             } catch (err) {
                 if (err.response?.status === 404) {
                     pushToast({ message: 'War session ended. Returning to base.', type: 'warning', duration: 3000 });
@@ -149,6 +262,7 @@ const GameContainer = () => {
         fetchState();
         const interval = setInterval(fetchState, 1000);
         return () => clearInterval(interval);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [warId]);
 
     const authority = gameState?.player_authority || 100;
@@ -157,26 +271,25 @@ const GameContainer = () => {
     const friendlyUnits = (gameState?.units || []).filter(u => !u.isEnemy);
     const allUnits = gameState?.units || [];
 
-    // ── Core command submission (shared by preset + extreme) ──────────────────
+    // ── Shared command submission ─────────────────────────────────────────────
     const submitCommand = useCallback(async (cmdText) => {
         if (!cmdText.trim() || isTransmitting) return;
         setIsTransmitting(true);
-        setLogs(prev => [...prev, { type: 'user', text: cmdText }]);
-        // On mobile, switch to log tab so player sees response
+        setLogs(prev => [...prev, makeLog({ type: 'user', text: cmdText })]);
         setActiveTab('log');
 
         try {
             const res = await api.post(`/api/v1/war/${warId}/command`, { type: 'text', content: cmdText });
 
             if (res.data.new_state) {
-                setGameState(prev => ({
-                    ...prev,
+                setGameState({
                     turn: res.data.new_state.turn_count,
+                    player_authority: 100,
                     units: [
                         ...res.data.new_state.player_units,
                         ...(res.data.new_state.enemy_units || []).map(u => ({ ...u, isEnemy: true })),
                     ],
-                }));
+                });
             }
 
             const friction = res.data.friction;
@@ -184,169 +297,68 @@ const GameContainer = () => {
             const refusal = instructions.find(i => i.action === 'HOLD' && i.parameters.reason && i.parameters.reason !== 'INSUFFICIENT_AUTHORITY');
 
             if (refusal) {
-                setLogs(prev => [...prev, { type: 'system', text: `COMMAND REJECTED: ${refusal.parameters.reason}`, isRefusal: true }]);
-            } else if (friction?.latency_ticks > 0) {
-                const delayMs = friction.latency_ticks * 1000;
-                setLogs(prev => [...prev, { type: 'system', text: `TRANSMIT DELAYED: Encrypting... (${friction.latency_ticks}s latency)` }]);
-                setTimeout(() => {
-                    const intent = res.data.intent;
-                    const inst = instructions[0];
-                    let fb = 'Command acknowledged.';
-                    if (intent) { fb = `TACTIC LOCKED: ${intent.primary_pattern.toUpperCase()} [Risk: ${intent.risk_profile.toUpperCase()}]`; if (intent.ethical_weight !== 'standard') fb += ` [Ethics: ${intent.ethical_weight.toUpperCase()}]`; }
-                    else if (inst) fb = `CONFIRMED: ${inst.action}`;
-                    setLogs(prev => [...prev, { type: 'system', text: fb }]);
-                }, delayMs);
+                setLogs(prev => [...prev, makeLog({ type: 'system', text: `COMMAND REJECTED: ${refusal.parameters.reason}`, isRefusal: true })]);
             } else {
                 const intent = res.data.intent;
                 const inst = instructions[0];
                 let fb = 'Command acknowledged.';
-                if (intent) { fb = `TACTIC LOCKED: ${intent.primary_pattern.toUpperCase()} [Risk: ${intent.risk_profile.toUpperCase()}]`; if (intent.ethical_weight !== 'standard') fb += ` [Ethics: ${intent.ethical_weight.toUpperCase()}]`; }
-                else if (inst) fb = `CONFIRMED: ${inst.action}`;
-                setLogs(prev => [...prev, { type: 'system', text: fb }]);
+                if (intent) {
+                    fb = `TACTIC LOCKED: ${intent.primary_pattern.toUpperCase()} [Risk: ${intent.risk_profile.toUpperCase()}]`;
+                    if (intent.ethical_weight !== 'standard') fb += ` [Ethics: ${intent.ethical_weight.toUpperCase()}]`;
+                } else if (inst) fb = `CONFIRMED: ${inst.action}`;
+
+                if (friction?.latency_ticks > 0) {
+                    setLogs(prev => [...prev, makeLog({ type: 'system', text: `TRANSMIT DELAYED: Encrypting... (${friction.latency_ticks}s latency)` })]);
+                    setTimeout(() => setLogs(prev => [...prev, makeLog({ type: 'system', text: fb })]), friction.latency_ticks * 1000);
+                } else {
+                    setLogs(prev => [...prev, makeLog({ type: 'system', text: fb })]);
+                }
             }
 
             if (res.data.cixus_judgment) {
-                setLogs(prev => [...prev, {
+                setLogs(prev => [...prev, makeLog({
                     type: 'cixus',
                     text: res.data.cixus_judgment.commentary,
                     delta: res.data.cixus_judgment.authority_change,
                     animate: true,
-                }]);
+                })]);
             }
             if (res.data.sitrep) {
-                setLogs(prev => [...prev, { type: 'system', text: `SITREP: ${res.data.sitrep}`, isSitrep: true }]);
+                setLogs(prev => [...prev, makeLog({ type: 'system', text: `SITREP: ${res.data.sitrep}`, isSitrep: true })]);
             }
         } catch (err) {
             const errMsg = err.response?.data?.detail || err.message;
             pushToast({ message: `Transmission failed: ${errMsg}`, type: 'error' });
-            setLogs(prev => [...prev, { type: 'system', text: `ERROR: ${errMsg}` }]);
+            setLogs(prev => [...prev, makeLog({ type: 'system', text: `ERROR: ${errMsg}` })]);
         } finally {
             setIsTransmitting(false);
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [warId, isTransmitting]);
 
-    // ── Preset command: submit directly ──────────────────────────────────────
-    const handlePresetCommand = (cmd) => submitCommand(cmd);
+    const handlePresetCommand = useCallback(cmd => submitCommand(cmd), [submitCommand]);
 
-    // ── Extreme command: from text input ─────────────────────────────────────
-    const handleExtremeSubmit = (e) => {
+    const handleExtremeSubmit = useCallback(e => {
         e.preventDefault();
         if (!extremeCmd.trim()) return;
         submitCommand(extremeCmd);
         setExtremeCmd('');
-    };
+    }, [extremeCmd, submitCommand]);
 
-    // ─────────────────────────────────────── Command Grid (shared) ────────────
-    const CommandGrid = () => (
-        <div className="grid grid-cols-2 gap-2 p-4">
-            {TACTICAL_COMMANDS.map(({ cmd, icon: Icon, color }) => (
-                <button
-                    key={cmd}
-                    onClick={() => handlePresetCommand(cmd)}
-                    disabled={isTransmitting}
-                    className={`
-                        flex items-center gap-3 px-4 py-3.5 border rounded-sm font-mono text-xs
-                        font-bold tracking-wider uppercase transition-all duration-150
-                        disabled:opacity-40 disabled:cursor-not-allowed select-none
-                        active:scale-95 ${CMD_COLORS[color]}
-                    `}
-                >
-                    <Icon className="w-4 h-4 shrink-0" />
-                    {cmd}
-                </button>
-            ))}
-        </div>
-    );
-
-    // ─────────────────────────────────────── Log Panel (shared) ──────────────
-    const LogPanel = () => (
-        <div className="flex-1 overflow-y-auto p-4 space-y-3 text-xs font-mono scrollbar-thin scrollbar-thumb-obsidian-700 scrollbar-track-transparent">
-            {logs.map((log, i) => (
-                <motion.div
-                    key={i}
-                    initial={{ opacity: 0, x: 10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    className={`
-                        p-3 rounded-sm border-l-2 relative overflow-hidden
-                        ${log.type === 'user' ? 'bg-obsidian-800/50 border-gold-600/50 text-gold-100 ml-6' : ''}
-                        ${log.type === 'system' ? 'border-obsidian-600 text-obsidian-400' : ''}
-                        ${log.type === 'system' && log.isRefusal ? 'bg-crimson-950/20 border-crimson-500 text-crimson-400' : ''}
-                        ${log.type === 'system' && log.isSitrep ? 'border-obsidian-500 text-obsidian-300 font-sans italic tracking-wide' : ''}
-                        ${log.type === 'cixus' ? 'bg-crimson-950/40 border-crimson-600 border-l-4 text-crimson-200 shadow-[inset_0_0_20px_rgba(153,27,27,0.1)]' : ''}
-                    `}
-                >
-                    {log.type === 'cixus' && <div className="absolute top-0 right-0 p-1 opacity-20"><Activity className="w-8 h-8 text-crimson-600" /></div>}
-                    <div className="flex justify-between items-start mb-1">
-                        <span className="text-[9px] opacity-60 uppercase tracking-widest">{log.type}</span>
-                        {log.delta && (
-                            <span className={`text-[9px] font-bold ${log.delta > 0 ? 'text-green-500' : 'text-crimson-500'}`}>
-                                {log.delta > 0 ? '+' : ''}{log.delta} SYNC
-                            </span>
-                        )}
-                    </div>
-                    {log.type === 'cixus' && log.animate
-                        ? <p className="leading-relaxed z-10 relative"><TypewriterText text={log.text} speed={20} /></p>
-                        : <p className="leading-relaxed z-10 relative">{log.text}</p>
-                    }
-                </motion.div>
-            ))}
-            <div ref={logsEndRef} />
-        </div>
-    );
-
-    // ─────────────────────────────────────── Extreme input (shared) ──────────
-    const ExtremePanel = ({ compact = false }) => (
-        <form onSubmit={handleExtremeSubmit} className={compact ? 'p-3' : 'p-4'}>
-            <div className="mb-3 flex items-center gap-2">
-                <Zap className="w-3.5 h-3.5 text-gold-500" />
-                <span className="text-[9px] tracking-[0.2em] text-gold-600 uppercase font-bold">Extreme Command — AI Interpreted</span>
-            </div>
-            <p className="text-[9px] text-obsidian-600 mb-3 leading-relaxed">
-                Use for complex multi-unit orders, unconventional tactics, or commands outside the standard grid. Cixus will judge harshly.
-            </p>
-            <div className="relative">
-                <input
-                    type="text"
-                    value={extremeCmd}
-                    onChange={e => setExtremeCmd(e.target.value)}
-                    placeholder={isLowAuth ? 'SIGNAL UNSTABLE...' : 'Describe your order in detail...'}
-                    disabled={isTransmitting}
-                    className={`
-                        w-full bg-obsidian-950 border rounded-sm py-3 pl-4 pr-12 text-sm text-white
-                        placeholder-obsidian-700 focus:outline-none transition-all duration-300
-                        ${isLowAuth ? 'border-crimson-800 focus:border-crimson-500' : 'border-gold-900/50 focus:border-gold-700'}
-                        ${isTransmitting ? 'opacity-50 cursor-not-allowed' : ''}
-                    `}
-                    autoFocus={!compact}
-                />
-                <button
-                    type="submit"
-                    disabled={isTransmitting || !extremeCmd.trim()}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-gold-700 hover:text-gold-400 disabled:opacity-30 transition-colors"
-                >
-                    {isTransmitting ? <Activity className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                </button>
-            </div>
-            <p className="text-[8px] text-obsidian-700 mt-2 flex items-center gap-1">
-                <AlertTriangle className="w-2.5 h-2.5" /> Extreme commands invoke full Cixus judgment
-            </p>
-        </form>
-    );
-
-    // ─────────────────────────────────────── RENDER ───────────────────────────
+    // ── Render ────────────────────────────────────────────────────────────────
     return (
         <div className="h-screen bg-obsidian-950 flex flex-col overflow-hidden text-obsidian-300 font-mono">
 
             <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
-            {/* Low Authority Glitch */}
-            {isLowAuth && <div className="absolute inset-0 pointer-events-none z-50 opacity-10 bg-[url('https://media.giphy.com/media/oEI9uBYSzLpBK/giphy.gif')] bg-cover mix-blend-overlay" />}
+            {isLowAuth && (
+                <div className="absolute inset-0 pointer-events-none z-50 opacity-10 bg-[url('https://media.giphy.com/media/oEI9uBYSzLpBK/giphy.gif')] bg-cover mix-blend-overlay" />
+            )}
 
-            {/* ── HEADER ────────────────────────────────────────────────────── */}
+            {/* ── TOP BAR ────────────────────────────────────────────────── */}
             <header className="h-12 lg:h-14 border-b border-obsidian-800 bg-obsidian-900/90 flex items-center justify-between px-3 lg:px-6 shrink-0 backdrop-blur-md z-40">
-                {/* Left */}
                 <div className="flex items-center gap-2 lg:gap-4 min-w-0">
-                    <button onClick={() => navigate('/dashboard')} className="p-1.5 lg:p-2 hover:bg-obsidian-800 rounded-sm text-obsidian-500 transition-colors shrink-0">
+                    <button onClick={() => navigate('/dashboard')} className="p-1.5 hover:bg-obsidian-800 rounded-sm text-obsidian-500 transition-colors shrink-0">
                         <ChevronLeft className="w-4 h-4 lg:w-5 lg:h-5" />
                     </button>
                     <div className="flex flex-col min-w-0">
@@ -358,17 +370,12 @@ const GameContainer = () => {
                             <span className="text-[9px] text-obsidian-500 hidden sm:block">{isTransmitting ? 'TRANSMITTING...' : 'CONNECTED'}</span>
                         </div>
                     </div>
-
-                    {/* War Phase — hidden on small mobile */}
-                    <div className={`hidden md:flex ml-2 px-2 py-1 border rounded-sm text-[8px] lg:text-[9px] font-bold tracking-[0.15em] uppercase items-center gap-1 ${warPhase.color} ${warPhase.border} bg-obsidian-900/60 ${warPhase.pulse ? 'animate-pulse' : ''}`}>
+                    <div className={`hidden md:flex ml-2 px-2 py-1 border rounded-sm text-[9px] font-bold tracking-[0.15em] uppercase items-center gap-1 ${warPhase.color} ${warPhase.border} bg-obsidian-900/60 ${warPhase.pulse ? 'animate-pulse' : ''}`}>
                         {warPhase.label}
                         <span className="opacity-50 ml-1">T-{gameState?.turn ?? 0}</span>
                     </div>
                 </div>
-
-                {/* Right */}
                 <div className="flex items-center gap-2 lg:gap-4 shrink-0">
-                    {/* Fog toggle */}
                     <button
                         onClick={() => setFogEnabled(f => !f)}
                         className={`flex items-center gap-1 px-2 py-1.5 border rounded-sm text-[9px] font-bold tracking-widest uppercase transition-all
@@ -377,8 +384,6 @@ const GameContainer = () => {
                         {fogEnabled ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
                         <span className="hidden sm:inline ml-1">FOG</span>
                     </button>
-
-                    {/* Auth meter */}
                     <div className="flex flex-col items-end">
                         <div className="flex items-center gap-1 text-[9px] font-bold tracking-widest text-obsidian-500">
                             <Wifi className={`w-3 h-3 ${isLowAuth ? 'text-crimson-500 animate-pulse' : 'text-gold-500'}`} />
@@ -386,7 +391,6 @@ const GameContainer = () => {
                         </div>
                         <div className="w-16 lg:w-32 h-1.5 bg-obsidian-800 rounded-full mt-0.5 overflow-hidden">
                             <motion.div
-                                initial={{ width: '100%' }}
                                 animate={{ width: `${authority}%` }}
                                 className={`h-full ${isLowAuth ? 'bg-crimson-600' : 'bg-gold-500'}`}
                             />
@@ -395,10 +399,10 @@ const GameContainer = () => {
                 </div>
             </header>
 
-            {/* ── BODY: mobile = flex-col, desktop = flex-row ─────────────── */}
+            {/* ── BODY ────────────────────────────────────────────────────── */}
             <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
 
-                {/* ── TACTICAL MAP (top on mobile, left on desktop) ─────────── */}
+                {/* ── TACTICAL MAP ────────────────────────────────────────── */}
                 <div
                     ref={mapRef}
                     className="relative bg-black border-b lg:border-b-0 lg:border-r border-obsidian-800 overflow-hidden
@@ -412,17 +416,14 @@ const GameContainer = () => {
                         ))}
                     </div>
 
-                    {/* Fog overlay */}
                     {fogEnabled && <div className="absolute inset-0 bg-black/45 backdrop-blur-[1px] pointer-events-none z-10" />}
 
-                    {/* Units */}
                     {allUnits.map(u => {
                         const px = u.position?.x ?? 50;
                         const pz = u.position?.z ?? u.position?.y ?? 50;
                         const visible = !u.isEnemy || !fogEnabled || isFogVisible(u, friendlyUnits);
                         const ghost = u.isEnemy && fogEnabled && !visible && isFogVisible(u, friendlyUnits, 50);
                         if (u.isEnemy && fogEnabled && !visible && !ghost) return null;
-
                         return (
                             <motion.div
                                 key={u.unit_id}
@@ -443,7 +444,7 @@ const GameContainer = () => {
                                             ${u.isEnemy ? 'bg-cyan-500 shadow-cyan-500/50' : 'bg-crimson-500 shadow-crimson-500/50'}
                                             ${selectedUnit?.unit_id === u.unit_id ? 'ring-2 ring-gold-500 ring-offset-1 ring-offset-black scale-150' : ''}
                                         `} />
-                                        <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 text-[6px] font-bold tracking-tighter whitespace-nowrap
+                                        <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 text-[6px] font-bold whitespace-nowrap
                                             ${u.isEnemy ? 'text-cyan-600' : 'text-crimson-600'}`}>
                                             {u.type?.substring(0, 3)}
                                         </div>
@@ -454,13 +455,13 @@ const GameContainer = () => {
                     })}
 
                     {(!gameState?.units || gameState.units.length === 0) && (
-                        <div className="text-center space-y-3 z-10 opacity-50 pointer-events-none">
+                        <div className="text-center z-10 opacity-50 pointer-events-none">
                             <MapIcon className="w-12 h-12 text-obsidian-700 mx-auto" />
-                            <p className="text-xs tracking-widest text-obsidian-600">TACTICAL GRID OFFLINE</p>
+                            <p className="text-xs tracking-widest text-obsidian-600 mt-3">TACTICAL GRID OFFLINE</p>
                         </div>
                     )}
 
-                    {/* ── Unit Inspector ── */}
+                    {/* Unit Inspector */}
                     <AnimatePresence>
                         {selectedUnit && (
                             <motion.div
@@ -511,7 +512,7 @@ const GameContainer = () => {
                         )}
                     </AnimatePresence>
 
-                    {/* ── Enemy Comms Ticker (map overlay) ── */}
+                    {/* Enemy comms ticker */}
                     <AnimatePresence>
                         {enemyComms.length > 0 && (
                             <motion.div
@@ -524,13 +525,9 @@ const GameContainer = () => {
                                     <span className="text-[7px] text-cyan-900 tracking-[0.2em] uppercase font-bold">INTERCEPTED COMMS</span>
                                 </div>
                                 {enemyComms.map(c => (
-                                    <motion.div
-                                        key={c.id}
-                                        initial={{ opacity: 0, x: 10 }}
-                                        animate={{ opacity: 1, x: 0 }}
-                                        className="bg-obsidian-950/90 border border-cyan-900/30 px-2.5 py-1.5 rounded-sm"
-                                    >
-                                        <p className="text-[8px] text-cyan-800 leading-relaxed tracking-wide">
+                                    <motion.div key={c.id} initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }}
+                                        className="bg-obsidian-950/90 border border-cyan-900/30 px-2.5 py-1.5 rounded-sm">
+                                        <p className="text-[8px] text-cyan-800 leading-relaxed">
                                             <span className="text-cyan-950 mr-1.5">[{c.ts}]</span>{c.text}
                                         </p>
                                     </motion.div>
@@ -540,51 +537,41 @@ const GameContainer = () => {
                     </AnimatePresence>
                 </div>
 
-                {/* ── RIGHT / BOTTOM PANEL ──────────────────────────────────── */}
+                {/* ── RIGHT / BOTTOM COMMAND PANEL ────────────────────────── */}
                 <div className="flex flex-col lg:w-96 bg-obsidian-900/80 border-t lg:border-t-0 lg:border-l border-obsidian-800 overflow-hidden flex-1 lg:flex-none">
 
-                    {/* ── MOBILE TAB BAR (hidden on desktop) ── */}
+                    {/* Mobile tab bar */}
                     <div className="flex lg:hidden border-b border-obsidian-800 bg-obsidian-950 shrink-0">
                         {TABS.map(({ id, label, Icon }) => (
-                            <button
-                                key={id}
-                                onClick={() => setActiveTab(id)}
+                            <button key={id} onClick={() => setActiveTab(id)}
                                 className={`flex-1 flex flex-col items-center gap-1 py-2.5 text-[9px] font-bold tracking-widest uppercase transition-all
                                     ${activeTab === id
-                                        ? id === 'extreme' ? 'text-gold-500 border-b-2 border-gold-600 bg-gold-950/20' : 'text-crimson-400 border-b-2 border-crimson-700 bg-crimson-950/10'
+                                        ? id === 'extreme' ? 'text-gold-500 border-b-2 border-gold-600 bg-gold-950/20'
+                                            : 'text-crimson-400 border-b-2 border-crimson-700 bg-crimson-950/10'
                                         : 'text-obsidian-600 hover:text-obsidian-400'
-                                    }`}
-                            >
+                                    }`}>
                                 <Icon className="w-3.5 h-3.5" />
                                 {label}
                             </button>
                         ))}
                     </div>
 
-                    {/* ── DESKTOP LAYOUT (always visible on lg:) ── */}
-                    {/* Desktop: log at top, command grid in middle, extreme toggle at bottom */}
+                    {/* Desktop layout */}
                     <div className="hidden lg:flex flex-col flex-1 overflow-hidden">
-                        {/* Log */}
                         <div className="flex-1 overflow-hidden flex flex-col">
-                            <LogPanel />
+                            <LogPanel logs={logs} logsEndRef={logsEndRef} />
                         </div>
-
-                        {/* Command Grid — primary */}
                         <div className="border-t border-obsidian-800 bg-obsidian-950/50 shrink-0">
                             <div className="px-4 pt-3 flex items-center justify-between">
                                 <span className="text-[9px] text-obsidian-600 tracking-widest uppercase font-bold">Tactical Orders</span>
                                 {isTransmitting && <span className="text-[9px] text-gold-600 animate-pulse tracking-widest">TRANSMITTING...</span>}
                             </div>
-                            <CommandGrid />
+                            <CommandGrid onCommand={handlePresetCommand} isTransmitting={isTransmitting} />
                         </div>
-
-                        {/* Extreme Command toggle */}
                         <div className="border-t border-obsidian-800 shrink-0">
-                            <button
-                                onClick={() => setExtremeOpen(o => !o)}
+                            <button onClick={() => setExtremeOpen(o => !o)}
                                 className={`w-full flex items-center justify-between px-4 py-3 text-[10px] font-bold tracking-widest uppercase transition-all
-                                    ${extremeOpen ? 'text-gold-400 bg-gold-950/20' : 'text-obsidian-600 hover:text-gold-600 hover:bg-obsidian-800/30'}`}
-                            >
+                                    ${extremeOpen ? 'text-gold-400 bg-gold-950/20' : 'text-obsidian-600 hover:text-gold-600 hover:bg-obsidian-800/30'}`}>
                                 <span className="flex items-center gap-2"><Zap className="w-3.5 h-3.5" /> Extreme Command</span>
                                 <span className="text-[8px] opacity-60">{extremeOpen ? '▲ COLLAPSE' : '▼ EXPAND'}</span>
                             </button>
@@ -597,14 +584,21 @@ const GameContainer = () => {
                                         transition={{ duration: 0.2 }}
                                         className="overflow-hidden border-t border-obsidian-800/50"
                                     >
-                                        <ExtremePanel compact />
+                                        <ExtremePanel
+                                            extremeCmd={extremeCmd}
+                                            setExtremeCmd={setExtremeCmd}
+                                            onSubmit={handleExtremeSubmit}
+                                            isTransmitting={isTransmitting}
+                                            isLowAuth={isLowAuth}
+                                            compact
+                                        />
                                     </motion.div>
                                 )}
                             </AnimatePresence>
                         </div>
                     </div>
 
-                    {/* ── MOBILE TAB CONTENT ── */}
+                    {/* Mobile tab content */}
                     <div className="lg:hidden flex-1 overflow-hidden flex flex-col">
                         {activeTab === 'orders' && (
                             <div className="flex-1 overflow-y-auto">
@@ -614,17 +608,23 @@ const GameContainer = () => {
                                         <span className="text-[9px] text-gold-600 tracking-widest">TRANSMITTING...</span>
                                     </div>
                                 )}
-                                <CommandGrid />
+                                <CommandGrid onCommand={handlePresetCommand} isTransmitting={isTransmitting} />
                             </div>
                         )}
                         {activeTab === 'log' && (
                             <div className="flex-1 overflow-hidden flex flex-col">
-                                <LogPanel />
+                                <LogPanel logs={logs} logsEndRef={logsEndRef} />
                             </div>
                         )}
                         {activeTab === 'extreme' && (
                             <div className="flex-1 overflow-y-auto">
-                                <ExtremePanel />
+                                <ExtremePanel
+                                    extremeCmd={extremeCmd}
+                                    setExtremeCmd={setExtremeCmd}
+                                    onSubmit={handleExtremeSubmit}
+                                    isTransmitting={isTransmitting}
+                                    isLowAuth={isLowAuth}
+                                />
                             </div>
                         )}
                     </div>

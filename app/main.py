@@ -5,6 +5,7 @@ from app.core.config import settings
 from app.api.v1 import war, player
 from app.db.base import engine, Base
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text
 import uuid
 
 # Import Models explicitly to register them with Base.metadata
@@ -18,13 +19,38 @@ from app.models import sitrep as sitrep_model
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Ensure tables exist (No drop logic here, only create)
+    # Ensure tables exist
     try:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
     except Exception as e:
         print(f"Database initialization failed: {e}")
+
+    # Runtime column migrations — safely adds new columns to existing DB tables.
+    # SQLite does NOT support UNIQUE in ALTER TABLE ADD COLUMN, so we add without it.
+    # For fresh installs, create_all (above) uses the model's unique=True to create
+    # a proper unique index. For existing tables, the Python-level IP lookup in
+    # player.py prevents duplicates at the application layer.
+    migrations = [
+        "ALTER TABLE players ADD COLUMN ip_address VARCHAR",
+        "ALTER TABLE players ADD COLUMN last_seen_ip VARCHAR",
+    ]
+    try:
+        async with engine.begin() as conn:
+            for sql in migrations:
+                try:
+                    await conn.execute(text(sql))
+                    print(f"[Migration] Applied: {sql}")
+                except Exception:
+                    # Column already exists — safe to ignore
+                    pass
+    except Exception as e:
+        # Non-fatal: app can still start if migration fails on an unusual DB
+        print(f"[Migration] Warning: column migration skipped — {e}")
+
     yield
+
+
 
 app = FastAPI(title=settings.PROJECT_NAME, version=settings.VERSION, lifespan=lifespan)
 
