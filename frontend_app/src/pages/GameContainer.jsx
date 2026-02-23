@@ -3,12 +3,13 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     Send, Activity, Map as MapIcon, ChevronLeft, Wifi, AlertTriangle,
-    Radio, Eye, EyeOff, X, Crosshair, Zap, List, LayoutGrid,
+    Radio, Eye, EyeOff, X, Crosshair, Zap, List, LayoutGrid, BookOpen,
     ArrowLeft, ArrowRight, Shield, Swords, Search, Pause, Target, ZapOff
 } from 'lucide-react';
 import api from '../api';
 import { ToastContainer, useToasts } from '../components/ErrorToast';
 import TypewriterText from '../components/TypewriterText';
+import TacticsPanel from '../components/TacticsPanel';
 
 // ── Constants (module-level, never recreated) ─────────────────────────────────
 
@@ -52,7 +53,8 @@ const CMD_COLORS = {
 const TABS = [
     { id: 'orders', label: 'ORDERS', Icon: LayoutGrid },
     { id: 'log', label: 'LOG', Icon: List },
-    { id: 'extreme', label: '⚡ EXTREME', Icon: Zap },
+    { id: 'tactics', label: 'TACTICS', Icon: BookOpen },
+    { id: 'extreme', label: '⚡ XTRM', Icon: Zap },
 ];
 
 // ── Pure helper functions ─────────────────────────────────────────────────────
@@ -568,6 +570,12 @@ const GameContainer = () => {
                             </div>
                             <CommandGrid onCommand={handlePresetCommand} isTransmitting={isTransmitting} />
                         </div>
+                        {/* Collapsible: Tactics Doctrine */}
+                        <div className="border-t border-obsidian-800 shrink-0" style={{ maxHeight: '280px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                            <div className="flex-1 overflow-hidden flex flex-col">
+                                <TacticsPanel onSelect={handlePresetCommand} isTransmitting={isTransmitting} compact />
+                            </div>
+                        </div>
                         <div className="border-t border-obsidian-800 shrink-0">
                             <button onClick={() => setExtremeOpen(o => !o)}
                                 className={`w-full flex items-center justify-between px-4 py-3 text-[10px] font-bold tracking-widest uppercase transition-all
@@ -614,6 +622,11 @@ const GameContainer = () => {
                         {activeTab === 'log' && (
                             <div className="flex-1 overflow-hidden flex flex-col">
                                 <LogPanel logs={logs} logsEndRef={logsEndRef} />
+                            </div>
+                        )}
+                        {activeTab === 'tactics' && (
+                            <div className="flex-1 overflow-hidden flex flex-col">
+                                <TacticsPanel onSelect={cmd => { handlePresetCommand(cmd); setActiveTab('log'); }} isTransmitting={isTransmitting} />
                             </div>
                         )}
                         {activeTab === 'extreme' && (
