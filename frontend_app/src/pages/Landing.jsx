@@ -117,7 +117,15 @@ const Landing = () => {
     const handleStartGame = async () => {
         setLoading(true);
         try {
-            const response = await api.post('/api/v1/players/identify');
+            // Always send the stored player_id (if any) so the backend
+            // can find the same player even if their IP has changed.
+            const body = {};
+            const stored = localStorage.getItem('cixus_player');
+            if (stored) {
+                try { const p = JSON.parse(stored); if (p?.id) body.player_id = p.id; } catch { }
+            }
+
+            const response = await api.post('/api/v1/players/identify', body);
             const player = response.data;
             localStorage.setItem('cixus_player', JSON.stringify(player));
 
@@ -134,6 +142,7 @@ const Landing = () => {
             setLoading(false);
         }
     };
+
 
     return (
         <div className="min-h-screen bg-obsidian-950 text-obsidian-500 overflow-x-hidden selection:bg-crimson-900 selection:text-white">
