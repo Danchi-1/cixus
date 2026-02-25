@@ -558,53 +558,64 @@ const GameContainer = () => {
                         ))}
                     </div>
 
-                    {/* Desktop layout */}
+                    {/* ── Desktop layout ─────────────────────────────────── */}
                     <div className="hidden lg:flex flex-col flex-1 overflow-hidden">
-                        <div className="flex-1 overflow-hidden flex flex-col">
+
+                        {/* LOG PANEL — always visible, takes remaining space above commands */}
+                        <div className="flex-1 min-h-[140px] overflow-hidden flex flex-col border-b border-obsidian-800">
                             <LogPanel logs={logs} logsEndRef={logsEndRef} />
                         </div>
-                        <div className="border-t border-obsidian-800 bg-obsidian-950/50 shrink-0">
-                            <div className="px-4 pt-3 flex items-center justify-between">
-                                <span className="text-[9px] text-obsidian-600 tracking-widest uppercase font-bold">Tactical Orders</span>
-                                {isTransmitting && <span className="text-[9px] text-gold-600 animate-pulse tracking-widest">TRANSMITTING...</span>}
+
+                        {/* COMMAND SECTION — scrollable so nothing is ever cut off */}
+                        <div className="shrink-0 overflow-y-auto" style={{ maxHeight: '58%' }}>
+
+                            {/* Tactical preset orders */}
+                            <div className="bg-obsidian-950/50 border-b border-obsidian-800">
+                                <div className="px-4 pt-3 flex items-center justify-between">
+                                    <span className="text-[9px] text-obsidian-600 tracking-widest uppercase font-bold">Tactical Orders</span>
+                                    {isTransmitting && <span className="text-[9px] text-gold-600 animate-pulse tracking-widest">TRANSMITTING...</span>}
+                                </div>
+                                <CommandGrid onCommand={handlePresetCommand} isTransmitting={isTransmitting} />
                             </div>
-                            <CommandGrid onCommand={handlePresetCommand} isTransmitting={isTransmitting} />
-                        </div>
-                        {/* Collapsible: Tactics Doctrine */}
-                        <div className="border-t border-obsidian-800 shrink-0" style={{ maxHeight: '280px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                            <div className="flex-1 overflow-hidden flex flex-col">
+
+                            {/* Tactical Doctrine panel */}
+                            <div className="border-b border-obsidian-800">
                                 <TacticsPanel onSelect={handlePresetCommand} isTransmitting={isTransmitting} compact />
                             </div>
-                        </div>
-                        <div className="border-t border-obsidian-800 shrink-0">
-                            <button onClick={() => setExtremeOpen(o => !o)}
-                                className={`w-full flex items-center justify-between px-4 py-3 text-[10px] font-bold tracking-widest uppercase transition-all
-                                    ${extremeOpen ? 'text-gold-400 bg-gold-950/20' : 'text-obsidian-600 hover:text-gold-600 hover:bg-obsidian-800/30'}`}>
-                                <span className="flex items-center gap-2"><Zap className="w-3.5 h-3.5" /> Extreme Command</span>
-                                <span className="text-[8px] opacity-60">{extremeOpen ? '▲ COLLAPSE' : '▼ EXPAND'}</span>
-                            </button>
-                            <AnimatePresence>
-                                {extremeOpen && (
-                                    <motion.div
-                                        initial={{ height: 0, opacity: 0 }}
-                                        animate={{ height: 'auto', opacity: 1 }}
-                                        exit={{ height: 0, opacity: 0 }}
-                                        transition={{ duration: 0.2 }}
-                                        className="overflow-hidden border-t border-obsidian-800/50"
-                                    >
-                                        <ExtremePanel
-                                            extremeCmd={extremeCmd}
-                                            setExtremeCmd={setExtremeCmd}
-                                            onSubmit={handleExtremeSubmit}
-                                            isTransmitting={isTransmitting}
-                                            isLowAuth={isLowAuth}
-                                            compact
-                                        />
-                                    </motion.div>
-                                )}
-                            </AnimatePresence>
+
+                            {/* Extreme Command — collapse/expand */}
+                            <div>
+                                <button onClick={() => setExtremeOpen(o => !o)}
+                                    className={`w-full flex items-center justify-between px-4 py-3 text-[10px] font-bold tracking-widest uppercase transition-all
+                                        ${extremeOpen ? 'text-gold-400 bg-gold-950/20' : 'text-obsidian-600 hover:text-gold-600 hover:bg-obsidian-800/30'}`}>
+                                    <span className="flex items-center gap-2"><Zap className="w-3.5 h-3.5" /> Extreme Command</span>
+                                    <span className="text-[8px] opacity-60">{extremeOpen ? '▲ COLLAPSE' : '▼ EXPAND'}</span>
+                                </button>
+                                <AnimatePresence>
+                                    {extremeOpen && (
+                                        <motion.div
+                                            initial={{ height: 0, opacity: 0 }}
+                                            animate={{ height: 'auto', opacity: 1 }}
+                                            exit={{ height: 0, opacity: 0 }}
+                                            transition={{ duration: 0.2 }}
+                                            className="overflow-hidden border-t border-obsidian-800/50"
+                                        >
+                                            <ExtremePanel
+                                                extremeCmd={extremeCmd}
+                                                setExtremeCmd={setExtremeCmd}
+                                                onSubmit={handleExtremeSubmit}
+                                                isTransmitting={isTransmitting}
+                                                isLowAuth={isLowAuth}
+                                                compact
+                                            />
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
+                            </div>
+
                         </div>
                     </div>
+
 
                     {/* Mobile tab content */}
                     <div className="lg:hidden flex-1 overflow-hidden flex flex-col">
