@@ -1,8 +1,8 @@
 import React, { useState, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, X, ChevronDown, BookOpen, Zap } from 'lucide-react';
-import { PINNED_TACTICS, EXTENDED_TACTICS, DifficultyBar } from './TacticsShowcase';
-import { WithTooltip } from './TacticsShowcase';
+import { PINNED_TACTICS, EXTENDED_TACTICS, DifficultyBar, WithTooltip } from './TacticsShowcase';
+import SoundEngine from '../utils/SoundEngine';
 
 // All tactics combined for the war room
 const ALL_TACTICS = [...PINNED_TACTICS, ...EXTENDED_TACTICS];
@@ -17,7 +17,7 @@ const TAG_COLORS = {
 const TacticButton = memo(({ tactic, onSelect, isTransmitting }) => (
     <WithTooltip tactic={tactic}>
         <button
-            onClick={() => onSelect(tactic.name)}
+            onClick={() => { SoundEngine.play('tacticSelect'); onSelect(tactic.name); }}
             disabled={isTransmitting}
             className={`
                 w-full text-left p-3 rounded-sm border transition-all duration-150 group

@@ -10,6 +10,7 @@ import api from '../api';
 import { ToastContainer, useToasts } from '../components/ErrorToast';
 import TypewriterText from '../components/TypewriterText';
 import TacticsPanel from '../components/TacticsPanel';
+import SoundEngine from '../utils/SoundEngine';
 
 // ── Constants (module-level, never recreated) ─────────────────────────────────
 
@@ -203,10 +204,21 @@ const GameContainer = () => {
     const [enemyComms, setEnemyComms] = useState([]);
     const [activeTab, setActiveTab] = useState('orders');
     const [extremeOpen, setExtremeOpen] = useState(false);
+    const [sfxMuted, setSfxMuted] = useState(() => SoundEngine.isMuted());
 
     const { toasts, pushToast, dismissToast } = useToasts();
     const logsEndRef = useRef(null);
     const mapRef = useRef(null);
+    const prevAuthRef = useRef(100);
+
+    // Init SoundEngine + war-start sound on mount
+    useEffect(() => {
+        SoundEngine.init();
+        setSfxMuted(SoundEngine.isMuted());
+        // Brief delay so the browser suspends are resolved after first user gesture
+        const t = setTimeout(() => SoundEngine.play('warStart'), 400);
+        return () => clearTimeout(t);
+    }, []);
 
     // Scroll on new log — only when logs array length changes
     const logsLength = logs.length;
@@ -230,6 +242,7 @@ const GameContainer = () => {
                 const msg = COMMS_INTERCEPTS[Math.floor(Math.random() * COMMS_INTERCEPTS.length)];
                 const ts = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
                 setEnemyComms(prev => [...prev.slice(-3), { id: Date.now(), text: msg, ts }]);
+                SoundEngine.play('commsIntercept');
                 scheduleNext();
             }, delay);
         };
@@ -270,12 +283,19 @@ const GameContainer = () => {
     const authority = gameState?.player_authority || 100;
     const isLowAuth = authority < 30;
     const warPhase = getWarPhase(gameState?.turn);
+
+    // Low-authority alarm
+    useEffect(() => {
+        if (isLowAuth && prevAuthRef.current >= 30) SoundEngine.play('lowAuthority');
+        prevAuthRef.current = authority;
+    }, [isLowAuth, authority]);
     const friendlyUnits = (gameState?.units || []).filter(u => !u.isEnemy);
     const allUnits = gameState?.units || [];
 
     // ── Shared command submission ─────────────────────────────────────────────
     const submitCommand = useCallback(async (cmdText) => {
         if (!cmdText.trim() || isTransmitting) return;
+        SoundEngine.play('transmit');
         setIsTransmitting(true);
         setLogs(prev => [...prev, makeLog({ type: 'user', text: cmdText })]);
         setActiveTab('log');
@@ -318,10 +338,14 @@ const GameContainer = () => {
             }
 
             if (res.data.cixus_judgment) {
+                const delta = res.data.cixus_judgment.authority_change || 0;
+                SoundEngine.play('cixusJudge');
+                if (delta > 0) setTimeout(() => SoundEngine.play('authorityGain'), 350);
+                else if (delta < 0) setTimeout(() => SoundEngine.play('authorityLoss'), 350);
                 setLogs(prev => [...prev, makeLog({
                     type: 'cixus',
                     text: res.data.cixus_judgment.commentary,
-                    delta: res.data.cixus_judgment.authority_change,
+                    delta,
                     animate: true,
                 })]);
             }
@@ -338,7 +362,7 @@ const GameContainer = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [warId, isTransmitting]);
 
-    const handlePresetCommand = useCallback(cmd => submitCommand(cmd), [submitCommand]);
+    const handlePresetCommand = useCallback(cmd => { SoundEngine.play('click'); submitCommand(cmd); }, [submitCommand]);
 
     const handleExtremeSubmit = useCallback(e => {
         e.preventDefault();
@@ -378,6 +402,14 @@ const GameContainer = () => {
                     </div>
                 </div>
                 <div className="flex items-center gap-2 lg:gap-4 shrink-0">
+                    {/* Mute toggle */}
+                    <button
+                        onClick={() => { const m = !sfxMuted; SoundEngine.setMute(m); setSfxMuted(m); if (!m) SoundEngine.play('click'); }}
+                        title={sfxMuted ? 'Unmute SFX' : 'Mute SFX'}
+                        className="flex items-center gap-1 px-2 py-1.5 border border-obsidian-800 rounded-sm text-[9px] font-bold tracking-widest uppercase transition-all hover:border-obsidian-600 text-obsidian-500 hover:text-obsidian-300"
+                    >
+                        <span className="text-sm leading-none">{sfxMuted ? '🔇' : '🔊'}</span>
+                    </button>
                     <button
                         onClick={() => setFogEnabled(f => !f)}
                         className={`flex items-center gap-1 px-2 py-1.5 border rounded-sm text-[9px] font-bold tracking-widest uppercase transition-all
