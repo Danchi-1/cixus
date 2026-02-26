@@ -181,6 +181,146 @@ const ExtremePanel = memo(({ extremeCmd, setExtremeCmd, onSubmit, isTransmitting
 ));
 ExtremePanel.displayName = 'ExtremePanel';
 
+// ── Battlefield ambient data (seeded random, computed once at module load) ────
+const _sr = (seed) => { let s = seed; return () => { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; }; };
+const _re = _sr(42), _rf = _sr(99), _rb = _sr(7), _rbl = _sr(13);
+// Friendly: 300 troops in 3 disciplined battle lines (front / middle / reserve)
+const FRIENDLY_SWARM = Array.from({ length: 300 }, (_, i) => {
+    const line = Math.floor(i / 100);           // 0 = front, 1 = middle, 2 = reserve
+    const pos = (i % 100) / 100;                // horizontal position along the line
+    const jx = _rf() * 0.025 - 0.0125;         // ±1.25% horizontal jitter
+    const jy = _rf() * 0.018 - 0.009;          // ±0.9% vertical jitter
+    return {
+        x: 0.03 + pos * 0.53 + jx,             // lines stretch across left 56% of map
+        y: 0.40 + line * 0.16 + jy,            // three rows: y≈0.40, 0.56, 0.72
+        phase: _rf() * Math.PI * 2, spd: 0.28 + _rf() * 0.45, r: 0.5 + _rf() * 0.35,
+    };
+});
+// Enemy: 500 troops in assault line + center mass + flanking encirclement
+const ENEMY_SWARM = Array.from({ length: 500 }, (_, i) => {
+    let x, y;
+    if (i < 150) {
+        // Top assault line — wide front across the whole width
+        x = 0.01 + (i / 150) * 0.97;
+        y = 0.02 + _re() * 0.10;
+    } else if (i < 280) {
+        // Second assault wave — slightly deeper
+        x = 0.01 + ((i - 150) / 130) * 0.96;
+        y = 0.13 + _re() * 0.10;
+    } else if (i < 400) {
+        // Center mass — densely packed mid-field
+        x = 0.05 + ((i - 280) / 120) * 0.88;
+        y = 0.24 + _re() * 0.12;
+    } else if (i < 460) {
+        // Right flanking column — encircling from right
+        x = 0.72 + _re() * 0.26;
+        y = 0.20 + ((i - 400) / 60) * 0.60 + _re() * 0.05;
+    } else {
+        // Left flanking probe — pressure from far left
+        x = 0.00 + _re() * 0.18;
+        y = 0.10 + ((i - 460) / 40) * 0.70 + _re() * 0.06;
+    }
+    return {
+        x: Math.max(0.005, Math.min(0.995, x + _re() * 0.012 - 0.006)),
+        y: Math.max(0.005, Math.min(0.995, y + _re() * 0.008 - 0.004)),
+        phase: _re() * Math.PI * 2, spd: 0.3 + _re() * 0.6, r: 0.7 + _re() * 0.5,
+    };
+});
+const BLOOD = Array.from({ length: 22 }, () => ({ x: _rb() * 0.95, y: _rb() * 0.95, rx: 3 + _rb() * 9, ry: 2 + _rb() * 5, a: 0.07 + _rb() * 0.18 }));
+const BULLETS = Array.from({ length: 28 }, () => { const left = _rbl() > 0.5; const ang = (left ? -18 + _rbl() * 36 : 162 + _rbl() * 36) * Math.PI / 180; const spd = 1.4 + _rbl() * 1.8; return { x0: left ? -0.04 : 1.04, y0: 0.08 + _rbl() * 0.82, dx: Math.cos(ang) * spd, dy: Math.sin(ang) * spd, period: 2.2 + _rbl() * 2.8, phase: _rbl() * 5, col: _rbl() > 0.6 ? '#fbbf24' : _rbl() > 0.3 ? '#fde68a' : '#ffedd5' }; });
+
+// ── Canvas-based battlefield renderer (pure RAF, zero re-renders) ──────────────
+const BattlefieldCanvas = memo(({ fogEnabled }) => {
+    const canvasRef = useRef(null);
+    const rafRef = useRef(null);
+
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+
+        const resize = () => { canvas.width = canvas.offsetWidth; canvas.height = canvas.offsetHeight; };
+        resize();
+        const ro = new ResizeObserver(resize);
+        ro.observe(canvas);
+
+        const draw = (ts) => {
+            const t = ts / 1000;
+            const W = canvas.width, H = canvas.height;
+            ctx.clearRect(0, 0, W, H);
+
+            // ── Blood splatters (painted every frame but cheap) ──────────
+            BLOOD.forEach(b => {
+                ctx.save();
+                ctx.translate(b.x * W, b.y * H);
+                ctx.scale(b.rx, b.ry);
+                ctx.beginPath();
+                ctx.arc(0, 0, 1, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(100,0,0,${b.a})`;
+                ctx.fill();
+                ctx.restore();
+            });
+
+            // ── Enemy swarm (cyan, only visible when fog off) ────────────
+            if (!fogEnabled) {
+                ctx.fillStyle = 'rgba(6,182,212,0.65)';
+                ENEMY_SWARM.forEach(e => {
+                    const jx = Math.sin(t * e.spd + e.phase) * e.r;
+                    const jy = Math.cos(t * e.spd * 0.7 + e.phase) * e.r;
+                    ctx.beginPath();
+                    ctx.arc(e.x * W + jx, e.y * H + jy, 1, 0, Math.PI * 2);
+                    ctx.fill();
+                });
+            } else {
+                // Show a small ghost ring cloud so the map isn't empty under fog
+                ctx.fillStyle = 'rgba(6,182,212,0.18)';
+                ENEMY_SWARM.filter((_, i) => i % 4 === 0).forEach(e => {
+                    ctx.beginPath();
+                    ctx.arc(e.x * W, e.y * H, 1, 0, Math.PI * 2);
+                    ctx.fill();
+                });
+            }
+
+            // ── Friendly swarm (crimson) ─────────────────────────────────
+            ctx.fillStyle = 'rgba(220,38,38,0.6)';
+            FRIENDLY_SWARM.forEach(f => {
+                const jx = Math.sin(t * f.spd + f.phase) * f.r;
+                const jy = Math.cos(t * f.spd * 0.8 + f.phase) * f.r;
+                ctx.beginPath();
+                ctx.arc(f.x * W + jx, f.y * H + jy, 1, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            // ── Bullet tracers ───────────────────────────────────────────
+            BULLETS.forEach(b => {
+                const prog = ((t + b.phase) % b.period) / b.period;
+                const px = (b.x0 + b.dx * b.period * prog) * W;
+                const py = (b.y0 + b.dy * b.period * prog) * H;
+                if (px < -20 || px > W + 20 || py < -20 || py > H + 20) return;
+                const alpha = 0.85 * (1 - prog * 0.55);
+                ctx.save();
+                ctx.translate(px, py);
+                ctx.rotate(Math.atan2(b.dy, b.dx));
+                ctx.globalAlpha = alpha;
+                ctx.fillStyle = b.col;
+                ctx.fillRect(-7, -0.7, 14, 1.4);
+                // Glow halo
+                ctx.globalAlpha = alpha * 0.28;
+                ctx.fillRect(-9, -2, 18, 4);
+                ctx.restore();
+            });
+
+            rafRef.current = requestAnimationFrame(draw);
+        };
+
+        rafRef.current = requestAnimationFrame(draw);
+        return () => { cancelAnimationFrame(rafRef.current); ro.disconnect(); };
+    }, [fogEnabled]);
+
+    return <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 5 }} />;
+});
+BattlefieldCanvas.displayName = 'BattlefieldCanvas';
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 const GameContainer = () => {
@@ -443,55 +583,72 @@ const GameContainer = () => {
                                h-[42vh] lg:h-auto lg:flex-1 flex items-center justify-center"
                     onClick={e => { if (e.currentTarget === e.target) setSelectedUnit(null); }}
                 >
-                    {/* Grid */}
-                    <div className="absolute inset-0 grid grid-cols-[repeat(10,minmax(0,1fr))] grid-rows-[repeat(10,minmax(0,1fr))] opacity-15 pointer-events-none">
+                    {/* Tactical map grid (faint, behind canvas) */}
+                    <div className="absolute inset-0 grid grid-cols-[repeat(10,minmax(0,1fr))] grid-rows-[repeat(10,minmax(0,1fr))] opacity-[0.07] pointer-events-none" style={{ zIndex: 1 }}>
                         {Array.from({ length: 100 }).map((_, i) => (
-                            <div key={i} className="border-[0.5px] border-obsidian-800 text-[6px] text-obsidian-800 flex items-center justify-center">{i + 1}</div>
+                            <div key={i} className="border-[0.5px] border-obsidian-700" />
                         ))}
                     </div>
 
-                    {fogEnabled && <div className="absolute inset-0 bg-black/45 backdrop-blur-[1px] pointer-events-none z-10" />}
+                    {/* Canvas battlefield — soldiers, bullets, blood */}
+                    <BattlefieldCanvas fogEnabled={fogEnabled} />
 
+                    {/* Fog overlay */}
+                    {fogEnabled && <div className="absolute inset-0 bg-black/50 backdrop-blur-[1.5px] pointer-events-none" style={{ zIndex: 15 }} />}
+
+                    {/* API units (if any) — tiny 2px dots on top of canvas */}
                     {allUnits.map(u => {
                         const px = u.position?.x ?? 50;
                         const pz = u.position?.z ?? u.position?.y ?? 50;
                         const visible = !u.isEnemy || !fogEnabled || isFogVisible(u, friendlyUnits);
-                        const ghost = u.isEnemy && fogEnabled && !visible && isFogVisible(u, friendlyUnits, 50);
-                        if (u.isEnemy && fogEnabled && !visible && !ghost) return null;
+                        if (u.isEnemy && fogEnabled && !visible) return null;
                         return (
                             <motion.div
                                 key={u.unit_id}
                                 initial={false}
                                 animate={{ left: `${px}%`, top: `${pz}%` }}
                                 transition={{ type: 'spring', stiffness: 50, damping: 20 }}
-                                onClick={e => { e.stopPropagation(); setSelectedUnit(u); }}
-                                className={`absolute z-20 cursor-pointer ${ghost ? 'opacity-30' : ''}`}
-                                style={{ transform: 'translate(-50%, -50%)' }}
+                                onClick={e => { e.stopPropagation(); setSelectedUnit(u); SoundEngine.play('click'); }}
+                                className="absolute cursor-pointer"
+                                style={{ zIndex: 25, transform: 'translate(-50%,-50%)' }}
                             >
-                                {ghost ? (
-                                    <div className="w-3 h-3 rounded-full bg-cyan-900/60 border border-cyan-800/40 flex items-center justify-center animate-pulse">
-                                        <span className="text-[5px] text-cyan-800 font-bold">?</span>
-                                    </div>
-                                ) : (
-                                    <>
-                                        <div className={`w-3 h-3 rounded-full shadow-[0_0_8px_rgba(0,0,0,0.5)]
-                                            ${u.isEnemy ? 'bg-cyan-500 shadow-cyan-500/50' : 'bg-crimson-500 shadow-crimson-500/50'}
-                                            ${selectedUnit?.unit_id === u.unit_id ? 'ring-2 ring-gold-500 ring-offset-1 ring-offset-black scale-150' : ''}
-                                        `} />
-                                        <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 text-[6px] font-bold whitespace-nowrap
-                                            ${u.isEnemy ? 'text-cyan-600' : 'text-crimson-600'}`}>
-                                            {u.type?.substring(0, 3)}
-                                        </div>
-                                    </>
-                                )}
+                                <div className={`w-1.5 h-1.5 rounded-full
+                                    ${u.isEnemy ? 'bg-cyan-400' : 'bg-crimson-400'}
+                                    ${selectedUnit?.unit_id === u.unit_id ? 'ring-1 ring-gold-400 scale-150' : ''}`}
+                                />
                             </motion.div>
                         );
                     })}
 
+                    {/* ── PLAYER COMMANDER DOT — scales with authority: 5px → 15px ── */}
+                    {(() => {
+                        // 5px at authority 0 (fresh lieutenant), 15px at authority 100 (General)
+                        const dotSize = 5 + (authority / 100) * 10;
+                        const half = dotSize / 2;
+                        const glow = `0 0 ${6 + authority / 10}px rgba(253,224,71,${0.6 + authority / 250})`;
+                        return (
+                            <div
+                                className="absolute pointer-events-none"
+                                style={{ left: `${friendlyUnits[0]?.position?.x ?? 22}%`, top: `${friendlyUnits[0]?.position?.z ?? friendlyUnits[0]?.position?.y ?? 65}%`, zIndex: 30, transform: 'translate(-50%,-50%)' }}
+                            >
+                                <motion.div
+                                    animate={{ scale: [1, 2.4, 1], opacity: [0.45, 0, 0.45] }}
+                                    transition={{ repeat: Infinity, duration: 2.4, ease: 'easeOut' }}
+                                    className="absolute rounded-full bg-gold-400"
+                                    style={{ width: dotSize, height: dotSize, top: -half, left: -half }}
+                                />
+                                <div
+                                    className="absolute rounded-full bg-gold-300 border border-gold-100"
+                                    style={{ width: dotSize, height: dotSize, top: -half, left: -half, boxShadow: glow }}
+                                />
+                            </div>
+                        );
+                    })()}
+
+                    {/* Empty state */}
                     {(!gameState?.units || gameState.units.length === 0) && (
-                        <div className="text-center z-10 opacity-50 pointer-events-none">
-                            <MapIcon className="w-12 h-12 text-obsidian-700 mx-auto" />
-                            <p className="text-xs tracking-widest text-obsidian-600 mt-3">TACTICAL GRID OFFLINE</p>
+                        <div className="absolute bottom-3 left-3 z-30 text-[8px] font-mono text-obsidian-800 tracking-widest uppercase pointer-events-none">
+                            battlefield online
                         </div>
                     )}
 
