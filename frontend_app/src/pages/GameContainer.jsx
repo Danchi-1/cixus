@@ -184,49 +184,57 @@ ExtremePanel.displayName = 'ExtremePanel';
 // ── Battlefield ambient data (seeded random, computed once at module load) ────
 const _sr = (seed) => { let s = seed; return () => { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; }; };
 const _re = _sr(42), _rf = _sr(99), _rb = _sr(7), _rbl = _sr(13);
-// Friendly: 300 troops in 3 tight horizontal battle lines
-// Jitter is in normalised coords: ±0.002 ≈ ±1.2px on a 600px canvas (< inter-dot spacing → line stays sharp)
-const FRIENDLY_SWARM = Array.from({ length: 300 }, (_, i) => {
-    const line = Math.floor(i / 100);           // 0 = front, 1 = middle, 2 = reserve
-    const pos = (i % 100) / 99;               // 0→1, evenly spaced within each line
-    return {
-        x: 0.04 + pos * 0.52 + (_rf() * 0.004 - 0.002),  // left 56%, ±0.2% jitter
-        y: 0.42 + line * 0.16 + (_rf() * 0.003 - 0.0015), // rows at 42%, 58%, 74%
-        phase: _rf() * Math.PI * 2, spd: 0.25 + _rf() * 0.35, r: 0.4 + _rf() * 0.25,
-    };
-});
-// Enemy: 500 troops — 3 assault waves across full width + right flank column + left probe
-const ENEMY_SWARM = Array.from({ length: 500 }, (_, i) => {
-    let x, y;
-    if (i < 160) {
-        // Wave 1 — top edge, full width
-        x = 0.01 + (i / 159) * 0.97;
-        y = 0.03 + (_re() * 0.004 - 0.002);
-    } else if (i < 310) {
-        // Wave 2 — slightly deeper
-        x = 0.01 + ((i - 160) / 149) * 0.97;
-        y = 0.10 + (_re() * 0.004 - 0.002);
-    } else if (i < 420) {
-        // Wave 3 / center mass
-        x = 0.03 + ((i - 310) / 109) * 0.93;
-        y = 0.17 + (_re() * 0.004 - 0.002);
-    } else if (i < 470) {
-        // Right flanking column (vertical)
-        const j = (i - 420) / 49;
-        x = 0.76 + (_re() * 0.004 - 0.002);
-        y = 0.20 + j * 0.58;
-    } else {
-        // Left probe column (vertical)
-        const j = (i - 470) / 29;
-        x = 0.03 + (_re() * 0.004 - 0.002);
-        y = 0.12 + j * 0.65;
-    }
-    return {
-        x: Math.max(0.005, Math.min(0.995, x)),
-        y: Math.max(0.005, Math.min(0.995, y)),
-        phase: _re() * Math.PI * 2, spd: 0.28 + _re() * 0.5, r: 0.5 + _re() * 0.35,
-    };
-});
+// Helper: build a rectangular battalion block (cols × rows of soldiers)
+// sX/sY = inter-dot spacing in normalised coords (~0.013 ≈ 8px on a 600px canvas)
+const _mkBlk = (x0, y0, cols, rows, rng, sX = 0.013, sY = 0.012) =>
+    Array.from({ length: cols * rows }, (_, i) => ({
+        x: x0 + (i % cols) * sX + rng() * 0.0018 - 0.0009,
+        y: y0 + Math.floor(i / cols) * sY + rng() * 0.001 - 0.0005,
+        phase: rng() * Math.PI * 2,
+        spd: 0.18 + rng() * 0.28,
+        r: 0.30 + rng() * 0.18,
+    }));
+
+// ── FRIENDLY: 9 blocks in 3 echelons (300 troops) ────────────────────────────
+// Mirrors reference: front infantry blocks → archer screen → commanders/reserve
+// Each echelon is staggered relative to the one behind it (classic chequerboard)
+const FRIENDLY_SWARM = [
+    // Echelon 1 — Front infantry (2 large blocks, 12c×5r = 60 each = 120)
+    ..._mkBlk(0.04, 0.43, 12, 5, _rf),
+    ..._mkBlk(0.25, 0.43, 12, 5, _rf),
+    // Echelon 2 — Archer screen (3 blocks, staggered, 10c×4r = 40 each = 120)
+    ..._mkBlk(0.01, 0.58, 10, 4, _rf),
+    ..._mkBlk(0.18, 0.58, 10, 4, _rf),
+    ..._mkBlk(0.35, 0.58, 10, 4, _rf),
+    // Echelon 3 — Reserve / commanders (4 smaller blocks, 6c×5r = 30 + 7c×4r = 28 + 6c×3r = 18 + 6c×3r = 18 = 60)
+    ..._mkBlk(0.04, 0.73, 6, 5, _rf),
+    ..._mkBlk(0.16, 0.73, 7, 4, _rf),
+    ..._mkBlk(0.28, 0.73, 6, 3, _rf),
+    ..._mkBlk(0.38, 0.73, 6, 3, _rf),
+];
+// ── ENEMY: 11 blocks in 3 assault waves + flanks (500 troops) ────────────────
+// Wave 1 & 2 are full-width, Wave 3 straddles the centre; flanks encircle
+const ENEMY_SWARM = [
+    // Wave 1 — 4 wide blocks across map top (14c×4r = 56 each = 224)
+    ..._mkBlk(0.01, 0.02, 14, 4, _re),
+    ..._mkBlk(0.22, 0.02, 14, 4, _re),
+    ..._mkBlk(0.43, 0.02, 14, 4, _re),
+    ..._mkBlk(0.64, 0.02, 14, 4, _re),
+    // Wave 2 — 3 blocks STAGGERED between wave‑1 gaps (12c×4r = 48 each = 144)
+    ..._mkBlk(0.12, 0.14, 12, 4, _re),
+    ..._mkBlk(0.33, 0.14, 12, 4, _re),
+    ..._mkBlk(0.54, 0.14, 12, 4, _re),
+    // Wave 3 — centre push (10c×4r = 40)
+    ..._mkBlk(0.26, 0.26, 10, 4, _re),
+    // Right flanking column — 3 blocks stacked vertically (4c×5r = 20 each = 60)
+    ..._mkBlk(0.82, 0.10, 4, 5, _re),
+    ..._mkBlk(0.82, 0.24, 4, 5, _re),
+    ..._mkBlk(0.82, 0.38, 4, 5, _re),
+    // Left flanking probe — 2 blocks (4c×4r = 16 each = 32)
+    ..._mkBlk(0.01, 0.14, 4, 4, _re),
+    ..._mkBlk(0.01, 0.27, 4, 4, _re),
+];
+
 
 const BLOOD = Array.from({ length: 22 }, () => ({ x: _rb() * 0.95, y: _rb() * 0.95, rx: 3 + _rb() * 9, ry: 2 + _rb() * 5, a: 0.07 + _rb() * 0.18 }));
 const BULLETS = Array.from({ length: 28 }, () => { const left = _rbl() > 0.5; const ang = (left ? -18 + _rbl() * 36 : 162 + _rbl() * 36) * Math.PI / 180; const spd = 1.4 + _rbl() * 1.8; return { x0: left ? -0.04 : 1.04, y0: 0.08 + _rbl() * 0.82, dx: Math.cos(ang) * spd, dy: Math.sin(ang) * spd, period: 2.2 + _rbl() * 2.8, phase: _rbl() * 5, col: _rbl() > 0.6 ? '#fbbf24' : _rbl() > 0.3 ? '#fde68a' : '#ffedd5' }; });
