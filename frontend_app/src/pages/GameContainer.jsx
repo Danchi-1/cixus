@@ -184,104 +184,147 @@ ExtremePanel.displayName = 'ExtremePanel';
 // ── Battlefield ambient data (seeded random, computed once at module load) ────
 const _sr = (seed) => { let s = seed; return () => { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; }; };
 const _re = _sr(42), _rf = _sr(99), _rb = _sr(7), _rbl = _sr(13);
-// Friendly: 300 troops in 3 disciplined battle lines (front / middle / reserve)
+// Friendly: 300 troops in 3 tight horizontal battle lines
+// Jitter is in normalised coords: ±0.002 ≈ ±1.2px on a 600px canvas (< inter-dot spacing → line stays sharp)
 const FRIENDLY_SWARM = Array.from({ length: 300 }, (_, i) => {
     const line = Math.floor(i / 100);           // 0 = front, 1 = middle, 2 = reserve
-    const pos = (i % 100) / 100;                // horizontal position along the line
-    const jx = _rf() * 0.025 - 0.0125;         // ±1.25% horizontal jitter
-    const jy = _rf() * 0.018 - 0.009;          // ±0.9% vertical jitter
+    const pos = (i % 100) / 99;               // 0→1, evenly spaced within each line
     return {
-        x: 0.03 + pos * 0.53 + jx,             // lines stretch across left 56% of map
-        y: 0.40 + line * 0.16 + jy,            // three rows: y≈0.40, 0.56, 0.72
-        phase: _rf() * Math.PI * 2, spd: 0.28 + _rf() * 0.45, r: 0.5 + _rf() * 0.35,
+        x: 0.04 + pos * 0.52 + (_rf() * 0.004 - 0.002),  // left 56%, ±0.2% jitter
+        y: 0.42 + line * 0.16 + (_rf() * 0.003 - 0.0015), // rows at 42%, 58%, 74%
+        phase: _rf() * Math.PI * 2, spd: 0.25 + _rf() * 0.35, r: 0.4 + _rf() * 0.25,
     };
 });
-// Enemy: 500 troops in assault line + center mass + flanking encirclement
+// Enemy: 500 troops — 3 assault waves across full width + right flank column + left probe
 const ENEMY_SWARM = Array.from({ length: 500 }, (_, i) => {
     let x, y;
-    if (i < 150) {
-        // Top assault line — wide front across the whole width
-        x = 0.01 + (i / 150) * 0.97;
-        y = 0.02 + _re() * 0.10;
-    } else if (i < 280) {
-        // Second assault wave — slightly deeper
-        x = 0.01 + ((i - 150) / 130) * 0.96;
-        y = 0.13 + _re() * 0.10;
-    } else if (i < 400) {
-        // Center mass — densely packed mid-field
-        x = 0.05 + ((i - 280) / 120) * 0.88;
-        y = 0.24 + _re() * 0.12;
-    } else if (i < 460) {
-        // Right flanking column — encircling from right
-        x = 0.72 + _re() * 0.26;
-        y = 0.20 + ((i - 400) / 60) * 0.60 + _re() * 0.05;
+    if (i < 160) {
+        // Wave 1 — top edge, full width
+        x = 0.01 + (i / 159) * 0.97;
+        y = 0.03 + (_re() * 0.004 - 0.002);
+    } else if (i < 310) {
+        // Wave 2 — slightly deeper
+        x = 0.01 + ((i - 160) / 149) * 0.97;
+        y = 0.10 + (_re() * 0.004 - 0.002);
+    } else if (i < 420) {
+        // Wave 3 / center mass
+        x = 0.03 + ((i - 310) / 109) * 0.93;
+        y = 0.17 + (_re() * 0.004 - 0.002);
+    } else if (i < 470) {
+        // Right flanking column (vertical)
+        const j = (i - 420) / 49;
+        x = 0.76 + (_re() * 0.004 - 0.002);
+        y = 0.20 + j * 0.58;
     } else {
-        // Left flanking probe — pressure from far left
-        x = 0.00 + _re() * 0.18;
-        y = 0.10 + ((i - 460) / 40) * 0.70 + _re() * 0.06;
+        // Left probe column (vertical)
+        const j = (i - 470) / 29;
+        x = 0.03 + (_re() * 0.004 - 0.002);
+        y = 0.12 + j * 0.65;
     }
     return {
-        x: Math.max(0.005, Math.min(0.995, x + _re() * 0.012 - 0.006)),
-        y: Math.max(0.005, Math.min(0.995, y + _re() * 0.008 - 0.004)),
-        phase: _re() * Math.PI * 2, spd: 0.3 + _re() * 0.6, r: 0.7 + _re() * 0.5,
+        x: Math.max(0.005, Math.min(0.995, x)),
+        y: Math.max(0.005, Math.min(0.995, y)),
+        phase: _re() * Math.PI * 2, spd: 0.28 + _re() * 0.5, r: 0.5 + _re() * 0.35,
     };
 });
+
 const BLOOD = Array.from({ length: 22 }, () => ({ x: _rb() * 0.95, y: _rb() * 0.95, rx: 3 + _rb() * 9, ry: 2 + _rb() * 5, a: 0.07 + _rb() * 0.18 }));
 const BULLETS = Array.from({ length: 28 }, () => { const left = _rbl() > 0.5; const ang = (left ? -18 + _rbl() * 36 : 162 + _rbl() * 36) * Math.PI / 180; const spd = 1.4 + _rbl() * 1.8; return { x0: left ? -0.04 : 1.04, y0: 0.08 + _rbl() * 0.82, dx: Math.cos(ang) * spd, dy: Math.sin(ang) * spd, period: 2.2 + _rbl() * 2.8, phase: _rbl() * 5, col: _rbl() > 0.6 ? '#fbbf24' : _rbl() > 0.3 ? '#fde68a' : '#ffedd5' }; });
 
 // ── Canvas-based battlefield renderer (pure RAF, zero re-renders) ──────────────
-const BattlefieldCanvas = memo(({ fogEnabled }) => {
+// Module-level event queue — GameContainer pushes events; canvas consumes them each RAF frame
+const BATTLE_EVENTS = [];
+/** @param {'flash'|'smoke'} type @param {{x:number, y:number}} data  (normalised 0-1) */
+export function addBattleEvent(type, data) {
+    BATTLE_EVENTS.push({ type, data, born: performance.now() });
+    if (BATTLE_EVENTS.length > 40) BATTLE_EVENTS.shift();
+}
+
+const BattlefieldCanvas = memo(({ fogEnabled, warTurn }) => {
     const canvasRef = useRef(null);
     const rafRef = useRef(null);
+    const fogRef = useRef(fogEnabled);       // read inside RAF — no loop restart needed
+    const turnRef = useRef(warTurn || 0);
+    const bloodCanvas = useRef(null);             // offscreen blood layer (painted once)
+    const lastFrameRef = useRef(0);
+
+    // Keep refs in sync without triggering effect restart
+    useEffect(() => { fogRef.current = fogEnabled; }, [fogEnabled]);
+    useEffect(() => { turnRef.current = warTurn || 0; }, [warTurn]);
 
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
 
-        const resize = () => { canvas.width = canvas.offsetWidth; canvas.height = canvas.offsetHeight; };
+        // ── Resize handler + offscreen blood canvas ───────────────────────
+        const buildBloodCanvas = (W, H) => {
+            const off = document.createElement('canvas');
+            off.width = W; off.height = H;
+            const octx = off.getContext('2d');
+            BLOOD.forEach(b => {
+                octx.save();
+                octx.translate(b.x * W, b.y * H);
+                octx.scale(b.rx, b.ry);
+                octx.beginPath();
+                octx.arc(0, 0, 1, 0, Math.PI * 2);
+                octx.fillStyle = `rgba(100,0,0,${b.a})`;
+                octx.fill();
+                octx.restore();
+            });
+            bloodCanvas.current = off;
+        };
+
+        const resize = () => {
+            canvas.width = canvas.offsetWidth;
+            canvas.height = canvas.offsetHeight;
+            buildBloodCanvas(canvas.width, canvas.height);
+        };
         resize();
         const ro = new ResizeObserver(resize);
         ro.observe(canvas);
 
+        // ── Main draw loop ─────────────────────────────────────────────────
         const draw = (ts) => {
+            rafRef.current = requestAnimationFrame(draw);
+
+            // Frame-skip on mobile (~30fps cap)
+            const isMobile = window.innerWidth < 768;
+            if (isMobile && ts - lastFrameRef.current < 33) return;
+            lastFrameRef.current = ts;
+
             const t = ts / 1000;
             const W = canvas.width, H = canvas.height;
+            const fog = fogRef.current;
+            const turn = turnRef.current;
+            // Enemy advances ~2% of map height per turn, capped so they don't overrun
+            const advance = Math.min(turn * 0.018, 0.30);
+
             ctx.clearRect(0, 0, W, H);
 
-            // ── Blood splatters (painted every frame but cheap) ──────────
-            BLOOD.forEach(b => {
-                ctx.save();
-                ctx.translate(b.x * W, b.y * H);
-                ctx.scale(b.rx, b.ry);
-                ctx.beginPath();
-                ctx.arc(0, 0, 1, 0, Math.PI * 2);
-                ctx.fillStyle = `rgba(100,0,0,${b.a})`;
-                ctx.fill();
-                ctx.restore();
-            });
+            // ── Blood layer (offscreen, one composite) ────────────────────
+            if (bloodCanvas.current) ctx.drawImage(bloodCanvas.current, 0, 0);
 
-            // ── Enemy swarm (cyan, only visible when fog off) ────────────
-            if (!fogEnabled) {
+            // ── Enemy swarm ───────────────────────────────────────────────
+            if (!fog) {
                 ctx.fillStyle = 'rgba(6,182,212,0.65)';
                 ENEMY_SWARM.forEach(e => {
                     const jx = Math.sin(t * e.spd + e.phase) * e.r;
                     const jy = Math.cos(t * e.spd * 0.7 + e.phase) * e.r;
                     ctx.beginPath();
-                    ctx.arc(e.x * W + jx, e.y * H + jy, 1, 0, Math.PI * 2);
+                    ctx.arc(e.x * W + jx, (e.y + advance) * H + jy, 1, 0, Math.PI * 2);
                     ctx.fill();
                 });
             } else {
-                // Show a small ghost ring cloud so the map isn't empty under fog
-                ctx.fillStyle = 'rgba(6,182,212,0.18)';
-                ENEMY_SWARM.filter((_, i) => i % 4 === 0).forEach(e => {
+                ctx.fillStyle = 'rgba(6,182,212,0.15)';
+                ENEMY_SWARM.filter((_, i) => i % 5 === 0).forEach(e => {
                     ctx.beginPath();
-                    ctx.arc(e.x * W, e.y * H, 1, 0, Math.PI * 2);
+                    ctx.arc(e.x * W, (e.y + advance) * H, 1, 0, Math.PI * 2);
                     ctx.fill();
                 });
             }
 
-            // ── Friendly swarm (crimson) ─────────────────────────────────
+            // ── Friendly swarm ────────────────────────────────────────────
             ctx.fillStyle = 'rgba(220,38,38,0.6)';
             FRIENDLY_SWARM.forEach(f => {
                 const jx = Math.sin(t * f.spd + f.phase) * f.r;
@@ -291,7 +334,7 @@ const BattlefieldCanvas = memo(({ fogEnabled }) => {
                 ctx.fill();
             });
 
-            // ── Bullet tracers ───────────────────────────────────────────
+            // ── Bullet tracers ────────────────────────────────────────────
             BULLETS.forEach(b => {
                 const prog = ((t + b.phase) % b.period) / b.period;
                 const px = (b.x0 + b.dx * b.period * prog) * W;
@@ -304,22 +347,51 @@ const BattlefieldCanvas = memo(({ fogEnabled }) => {
                 ctx.globalAlpha = alpha;
                 ctx.fillStyle = b.col;
                 ctx.fillRect(-7, -0.7, 14, 1.4);
-                // Glow halo
-                ctx.globalAlpha = alpha * 0.28;
+                ctx.globalAlpha = alpha * 0.25;
                 ctx.fillRect(-9, -2, 18, 4);
                 ctx.restore();
             });
 
-            rafRef.current = requestAnimationFrame(draw);
+            // ── Battle events: muzzle flash + smoke ───────────────────────
+            const now = performance.now();
+            for (let i = BATTLE_EVENTS.length - 1; i >= 0; i--) {
+                const ev = BATTLE_EVENTS[i];
+                const age = (now - ev.born) / 1000; // seconds
+                const lifespan = ev.type === 'flash' ? 0.18 : 0.55;
+                if (age > lifespan) { BATTLE_EVENTS.splice(i, 1); continue; }
+                const prog = age / lifespan;
+                const ex = ev.data.x * W, ey = ev.data.y * H;
+                ctx.save();
+                ctx.translate(ex, ey);
+                if (ev.type === 'flash') {
+                    // White-orange muzzle spike: small → bigger → fades
+                    const r = (4 + prog * 12);
+                    ctx.globalAlpha = (1 - prog) * 0.9;
+                    const g = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
+                    g.addColorStop(0, 'rgba(255,255,200,1)');
+                    g.addColorStop(0.4, 'rgba(255,180,50,0.6)');
+                    g.addColorStop(1, 'rgba(255,100,0,0)');
+                    ctx.fillStyle = g;
+                    ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+                } else {
+                    // Dark smoke: expands + fades
+                    const r = 8 + prog * 28;
+                    ctx.globalAlpha = (1 - prog) * 0.45;
+                    ctx.fillStyle = `rgba(30,20,10,1)`;
+                    ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+                }
+                ctx.restore();
+            }
         };
 
         rafRef.current = requestAnimationFrame(draw);
         return () => { cancelAnimationFrame(rafRef.current); ro.disconnect(); };
-    }, [fogEnabled]);
+    }, []); // ← runs ONCE; fog & turn read from refs
 
     return <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 5 }} />;
 });
 BattlefieldCanvas.displayName = 'BattlefieldCanvas';
+
 
 // ── Main component ────────────────────────────────────────────────────────────
 
@@ -332,6 +404,8 @@ const GameContainer = () => {
     const makeLog = (fields) => ({ id: ++logIdRef.current, ...fields });
 
     const [extremeCmd, setExtremeCmd] = useState('');
+    const [logFilter, setLogFilter] = useState('all'); // 'all' | 'cixus' | 'system' | 'you'
+    const [tacticFlash, setTacticFlash] = useState(false); // tactic confirmation badge
     const [logs, setLogs] = useState(() => [
         makeLog({ type: 'system', text: 'Connection established to Cixus Command Core.' }),
         makeLog({ type: 'system', text: 'Battlefield rendering...' }),
@@ -350,14 +424,15 @@ const GameContainer = () => {
     const logsEndRef = useRef(null);
     const mapRef = useRef(null);
     const prevAuthRef = useRef(100);
+    const extremePanelRef = useRef(null); // for auto-scroll on expand
 
-    // Init SoundEngine + war-start sound on mount
+    // Init SoundEngine + war-start sound + ambient rumble on mount
     useEffect(() => {
         SoundEngine.init();
         setSfxMuted(SoundEngine.isMuted());
-        // Brief delay so the browser suspends are resolved after first user gesture
-        const t = setTimeout(() => SoundEngine.play('warStart'), 400);
-        return () => clearTimeout(t);
+        const t1 = setTimeout(() => SoundEngine.play('warStart'), 400);
+        const t2 = setTimeout(() => SoundEngine.startAmbient(), 1200);
+        return () => { clearTimeout(t1); clearTimeout(t2); SoundEngine.stopAmbient(); };
     }, []);
 
     // Scroll on new log — only when logs array length changes
@@ -423,12 +498,28 @@ const GameContainer = () => {
     const authority = gameState?.player_authority || 100;
     const isLowAuth = authority < 30;
     const warPhase = getWarPhase(gameState?.turn);
+    const warTurn = gameState?.turn ?? 0;
 
-    // Low-authority alarm
+    // Elapsed war time: turn × 4min → "Day N, HH:MM"
+    const elapsedTime = (() => {
+        const totalMins = warTurn * 4;
+        const days = Math.floor(totalMins / (60 * 24)) + 1;
+        const hrs = String(Math.floor((totalMins % (60 * 24)) / 60)).padStart(2, '0');
+        const mins = String(totalMins % 60).padStart(2, '0');
+        return `DAY ${days}, ${hrs}:${mins}`;
+    })();
+
+    // Authority stress effects
     useEffect(() => {
-        if (isLowAuth && prevAuthRef.current >= 30) SoundEngine.play('lowAuthority');
+        SoundEngine.updateStress(authority);
+        // On authority drop: one-shot alarm + smoke on the battlefield
+        if (authority < prevAuthRef.current) {
+            if (prevAuthRef.current >= 30 && authority < 30) SoundEngine.play('lowAuthority');
+            // Smoke cloud near commander position (normalised)
+            addBattleEvent('smoke', { x: 0.22, y: 0.65 });
+        }
         prevAuthRef.current = authority;
-    }, [isLowAuth, authority]);
+    }, [authority]);
     const friendlyUnits = (gameState?.units || []).filter(u => !u.isEnemy);
     const allUnits = gameState?.units || [];
 
@@ -504,6 +595,13 @@ const GameContainer = () => {
 
     const handlePresetCommand = useCallback(cmd => { SoundEngine.play('click'); submitCommand(cmd); }, [submitCommand]);
 
+    const handleTacticSelect = useCallback(cmd => {
+        SoundEngine.play('tacticSelect');
+        setTacticFlash(true);
+        setTimeout(() => setTacticFlash(false), 900);
+        submitCommand(cmd);
+    }, [submitCommand]);
+
     const handleExtremeSubmit = useCallback(e => {
         e.preventDefault();
         if (!extremeCmd.trim()) return;
@@ -538,7 +636,11 @@ const GameContainer = () => {
                     </div>
                     <div className={`hidden md:flex ml-2 px-2 py-1 border rounded-sm text-[9px] font-bold tracking-[0.15em] uppercase items-center gap-1 ${warPhase.color} ${warPhase.border} bg-obsidian-900/60 ${warPhase.pulse ? 'animate-pulse' : ''}`}>
                         {warPhase.label}
-                        <span className="opacity-50 ml-1">T-{gameState?.turn ?? 0}</span>
+                        <span className="opacity-50 ml-1">T-{warTurn}</span>
+                    </div>
+                    {/* Elapsed war time */}
+                    <div className="hidden lg:flex ml-2 px-2 py-1 border border-obsidian-800 rounded-sm text-[9px] tracking-widest text-obsidian-600">
+                        {elapsedTime}
                     </div>
                 </div>
                 <div className="flex items-center gap-2 lg:gap-4 shrink-0">
@@ -591,7 +693,7 @@ const GameContainer = () => {
                     </div>
 
                     {/* Canvas battlefield — soldiers, bullets, blood */}
-                    <BattlefieldCanvas fogEnabled={fogEnabled} />
+                    <BattlefieldCanvas fogEnabled={fogEnabled} warTurn={warTurn} />
 
                     {/* Fog overlay */}
                     {fogEnabled && <div className="absolute inset-0 bg-black/50 backdrop-blur-[1.5px] pointer-events-none" style={{ zIndex: 15 }} />}
@@ -752,7 +854,20 @@ const GameContainer = () => {
 
                         {/* LOG PANEL — always visible, takes remaining space above commands */}
                         <div className="flex-1 min-h-[140px] overflow-hidden flex flex-col border-b border-obsidian-800">
-                            <LogPanel logs={logs} logsEndRef={logsEndRef} />
+                            {/* Log filter tabs */}
+                            <div className="flex shrink-0 border-b border-obsidian-900 bg-obsidian-950/80">
+                                {[['all', 'ALL'], ['cixus', 'CIXUS'], ['system', 'SYS'], ['user', 'YOU']].map(([f, label]) => (
+                                    <button key={f} onClick={() => setLogFilter(f)}
+                                        className={`flex-1 py-1.5 text-[8px] font-bold tracking-widest uppercase transition-all
+                                            ${logFilter === f ? 'text-gold-500 border-b border-gold-600' : 'text-obsidian-700 hover:text-obsidian-500'}`}>
+                                        {label}
+                                    </button>
+                                ))}
+                            </div>
+                            <LogPanel
+                                logs={logFilter === 'all' ? logs : logs.filter(l => l.type === (logFilter === 'you' ? 'user' : logFilter))}
+                                logsEndRef={logsEndRef}
+                            />
                         </div>
 
                         {/* COMMAND SECTION — scrollable so nothing is ever cut off */}
@@ -767,14 +882,23 @@ const GameContainer = () => {
                                 <CommandGrid onCommand={handlePresetCommand} isTransmitting={isTransmitting} />
                             </div>
 
-                            {/* Tactical Doctrine panel */}
-                            <div className="border-b border-obsidian-800">
-                                <TacticsPanel onSelect={handlePresetCommand} isTransmitting={isTransmitting} compact />
+                            {/* Tactical Doctrine panel + tactic confirmation flash */}
+                            <div className="border-b border-obsidian-800 relative">
+                                {tacticFlash && (
+                                    <div className="absolute top-2 right-3 z-10 px-2 py-0.5 bg-gold-900/80 border border-gold-700/60 rounded-sm text-[8px] text-gold-400 font-bold tracking-widest animate-pulse">
+                                        TACTIC ISSUED
+                                    </div>
+                                )}
+                                <TacticsPanel onSelect={handleTacticSelect} isTransmitting={isTransmitting} compact />
                             </div>
 
                             {/* Extreme Command — collapse/expand */}
                             <div>
-                                <button onClick={() => setExtremeOpen(o => !o)}
+                                <button onClick={() => {
+                                    const newOpen = !extremeOpen;
+                                    setExtremeOpen(newOpen);
+                                    if (newOpen) setTimeout(() => extremePanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 220);
+                                }}
                                     className={`w-full flex items-center justify-between px-4 py-3 text-[10px] font-bold tracking-widest uppercase transition-all
                                         ${extremeOpen ? 'text-gold-400 bg-gold-950/20' : 'text-obsidian-600 hover:text-gold-600 hover:bg-obsidian-800/30'}`}>
                                     <span className="flex items-center gap-2"><Zap className="w-3.5 h-3.5" /> Extreme Command</span>
@@ -783,6 +907,7 @@ const GameContainer = () => {
                                 <AnimatePresence>
                                     {extremeOpen && (
                                         <motion.div
+                                            ref={extremePanelRef}
                                             initial={{ height: 0, opacity: 0 }}
                                             animate={{ height: 'auto', opacity: 1 }}
                                             exit={{ height: 0, opacity: 0 }}
@@ -826,7 +951,7 @@ const GameContainer = () => {
                         )}
                         {activeTab === 'tactics' && (
                             <div className="flex-1 overflow-hidden flex flex-col">
-                                <TacticsPanel onSelect={cmd => { handlePresetCommand(cmd); setActiveTab('log'); }} isTransmitting={isTransmitting} />
+                                <TacticsPanel onSelect={cmd => { handleTacticSelect(cmd); setActiveTab('log'); }} isTransmitting={isTransmitting} />
                             </div>
                         )}
                         {activeTab === 'extreme' && (

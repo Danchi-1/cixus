@@ -197,13 +197,98 @@ const SOUNDS = {
     },
 };
 
+// ── Ambient / continuous sounds ───────────────────────────────────────────────
+
+let _ambientNodes = null;  // holds refs to stop ambient loop
+let _heartbeatTimer = null;
+let _currentAuthority = 100;
+
+/** Start the always-on battlefield ambience: distant artillery drone */
+function startAmbientLoop() {
+    const c = ctx();
+    if (!c || _ambientNodes) return;
+
+    // Deep sub-bass rumble oscillator
+    const bass = c.createOscillator();
+    bass.type = 'sine';
+    bass.frequency.setValueAtTime(38, c.currentTime);
+    // Very slow LFO wobble on the frequency (~0.08Hz)
+    bass.frequency.setValueCurveAtTime(
+        Float32Array.from({ length: 100 }, (_, i) => 38 + Math.sin(i / 100 * Math.PI * 2) * 4),
+        c.currentTime, 12
+    );
+
+    const bassGain = c.createGain();
+    bassGain.gain.setValueAtTime(0, c.currentTime);
+    bassGain.gain.linearRampToValueAtTime(0.09 * _volume, c.currentTime + 3); // fade in
+
+    // Mid-frequency rumble (cannons, distant)
+    const mid = c.createOscillator();
+    mid.type = 'sawtooth';
+    mid.frequency.setValueAtTime(72, c.currentTime);
+
+    const midFilter = c.createBiquadFilter();
+    midFilter.type = 'lowpass';
+    midFilter.frequency.value = 120;
+
+    const midGain = c.createGain();
+    midGain.gain.setValueAtTime(0, c.currentTime);
+    midGain.gain.linearRampToValueAtTime(0.03 * _volume, c.currentTime + 4);
+
+    bass.connect(bassGain); bassGain.connect(c.destination);
+    mid.connect(midFilter); midFilter.connect(midGain); midGain.connect(c.destination);
+    bass.start(); mid.start();
+
+    _ambientNodes = { bass, bassGain, mid, midGain };
+
+    // Restart the LFO curve every 12s so it keeps looping
+    const loopLFO = () => {
+        if (!_ambientNodes) return;
+        try {
+            bass.frequency.cancelScheduledValues(c.currentTime);
+            bass.frequency.setValueCurveAtTime(
+                Float32Array.from({ length: 100 }, (_, i) => 38 + Math.sin(i / 100 * Math.PI * 2) * 4),
+                c.currentTime, 12
+            );
+        } catch { }
+        _ambientNodes._lfoTimer = setTimeout(loopLFO, 11800);
+    };
+    _ambientNodes._lfoTimer = setTimeout(loopLFO, 11800);
+}
+
+function stopAmbientLoop() {
+    if (!_ambientNodes) return;
+    const c = ctx();
+    if (c && _ambientNodes.bassGain) {
+        _ambientNodes.bassGain.gain.linearRampToValueAtTime(0, c.currentTime + 1.5);
+        _ambientNodes.midGain.gain.linearRampToValueAtTime(0, c.currentTime + 1.5);
+        clearTimeout(_ambientNodes._lfoTimer);
+        setTimeout(() => {
+            try { _ambientNodes.bass.stop(); _ambientNodes.mid.stop(); } catch { }
+            _ambientNodes = null;
+        }, 1600);
+    }
+}
+
+/** Schedule heartbeat ticks; rate escalates as authority falls toward 0 */
+function scheduleHeartbeat(authority) {
+    clearTimeout(_heartbeatTimer);
+    if (_muted || authority > 30) return;               // only active in danger zone
+    // BPM: 40 at ap=30 → 130 at ap=0
+    const bpm = 40 + ((30 - Math.max(0, authority)) / 30) * 90;
+    const interval = (60 / bpm) * 1000;
+    const c = ctx();
+    if (!c) return;
+    // Single heartbeat pair
+    tone({ frequency: 80, type: 'sine', duration: 0.06, gain: 0.25 * _volume });
+    tone({ frequency: 65, type: 'sine', duration: 0.06, gain: 0.20 * _volume, delay: 0.09 });
+    _heartbeatTimer = setTimeout(() => scheduleHeartbeat(_currentAuthority), interval);
+}
+
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 export const SoundEngine = {
-    /**
-     * Play a named sound.
-     * @param {keyof typeof SOUNDS} name
-     */
     play(name) {
         if (_muted) return;
         const fn = SOUNDS[name];
@@ -214,9 +299,29 @@ export const SoundEngine = {
         }
     },
 
+    /** Start ambient battlefield drone. Call after first user gesture. */
+    startAmbient() { if (!_muted) startAmbientLoop(); },
+
+    /** Stop ambient drone (e.g. on leaving war room). */
+    stopAmbient() { stopAmbientLoop(); clearTimeout(_heartbeatTimer); },
+
+    /**
+     * Call whenever authority changes. Manages the heartbeat loop.
+     * @param {number} authority 0–100
+     */
+    updateStress(authority) {
+        _currentAuthority = authority;
+        if (authority <= 30 && !_heartbeatTimer) {
+            scheduleHeartbeat(authority); // kick off loop
+        } else if (authority > 30) {
+            clearTimeout(_heartbeatTimer);
+            _heartbeatTimer = null;
+        }
+    },
+
     setMute(muted) {
         _muted = muted;
-        // Persist preference
+        if (muted) { stopAmbientLoop(); clearTimeout(_heartbeatTimer); }
         try { localStorage.setItem('cixus_sfx_muted', String(muted)); } catch { }
     },
 
@@ -224,12 +329,19 @@ export const SoundEngine = {
 
     setVolume(v) {
         _volume = Math.max(0, Math.min(1, v));
+        // Update live ambient gain if running
+        if (_ambientNodes) {
+            const c = ctx();
+            if (c) {
+                _ambientNodes.bassGain.gain.setTargetAtTime(0.09 * _volume, c.currentTime, 0.5);
+                _ambientNodes.midGain.gain.setTargetAtTime(0.03 * _volume, c.currentTime, 0.5);
+            }
+        }
         try { localStorage.setItem('cixus_sfx_volume', String(_volume)); } catch { }
     },
 
     getVolume() { return _volume; },
 
-    /** Call once on app start to restore persisted preferences */
     init() {
         try {
             const m = localStorage.getItem('cixus_sfx_muted');

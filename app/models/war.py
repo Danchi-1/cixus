@@ -25,6 +25,7 @@ class WarSession(Base):
     
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_command_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     player = relationship("Player", back_populates="wars")
     general = relationship("General", back_populates="war", uselist=False)

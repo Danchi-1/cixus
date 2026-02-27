@@ -3,6 +3,7 @@ from app.core.security import check_rate_limit
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 import uuid
+from datetime import datetime, timezone
 
 from app.db.base import get_db
 from app.models.war import WarSession
@@ -212,6 +213,9 @@ async def submit_command(war_id: UUID, cmd: CommandRequest, db: AsyncSession = D
         )
         db.add(action_log)
         
+        # Stamp last activity time for authority decay tracking
+        war.last_command_at = datetime.now(timezone.utc)
+
         await db.commit()
         
         return {
@@ -234,4 +238,19 @@ async def get_state(war_id: UUID, db: AsyncSession = Depends(get_db)):
     war = await db.get(WarSession, war_id)
     if not war:
         raise HTTPException(status_code=404, detail="War not found")
-    return war.current_state_snapshot
+
+    # ── Authority decay: -5 AP per idle minute, floor at 20 ──────────────────
+    player = await db.get(Player, war.player_id)
+    base_ap = player.authority_points if player and player.authority_points is not None else 100
+
+    if war.last_command_at:
+        idle_seconds = (datetime.now(timezone.utc) - war.last_command_at).total_seconds()
+        idle_minutes = max(0, idle_seconds / 60)
+        # Grace period: no decay in the first 2 minutes
+        decayed_ap = max(20, base_ap - max(0, (idle_minutes - 2) * 5))
+    else:
+        decayed_ap = base_ap
+
+    snapshot = dict(war.current_state_snapshot)
+    snapshot["player_authority"] = round(decayed_ap)
+    return snapshot
