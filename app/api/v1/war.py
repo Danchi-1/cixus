@@ -191,7 +191,42 @@ async def submit_command(war_id: UUID, cmd: CommandRequest, db: AsyncSession = D
         # Update Player Authority
         current_ap = player.authority_points or 100
         player.authority_points = max(0, min(100, current_ap + delta))
-        
+
+        # ── 8. Derive reputation signals from this command ────────────────────
+        rep = dict(player.reputation or {})
+        intent = game_command.intent
+        ethical  = intent.ethical_weight if intent else "standard"
+        risk     = intent.risk_profile    if intent else "medium"
+        pattern  = (intent.primary_pattern or "").lower() if intent else ""
+
+        def _inc(trait, amount):
+            rep[trait] = round(min(1.0, rep.get(trait, 0.0) + amount), 3)
+
+        # Ethical stance
+        if ethical == "brutal":    _inc("Ruthless",  0.05)
+        elif ethical == "merciful": _inc("Merciful",  0.04)
+
+        # Risk appetite
+        if risk == "high":   _inc("Reckless",   0.03)
+        elif risk == "low":  _inc("Calculated", 0.03)
+
+        # Command pattern
+        if any(w in pattern for w in ("attack", "assault", "flank", "charge")):
+            _inc("Aggressive", 0.03)
+        if any(w in pattern for w in ("defend", "fortif", "hold", "retreat")):
+            _inc("Defensive",  0.03)
+        if any(w in pattern for w in ("ambush", "feint", "diversion", "encircle")):
+            _inc("Cunning",    0.04)
+
+        # Authority outcome
+        if delta > 0:  _inc("Decisive",  0.03)
+        elif delta < 0: _inc("Hesitant",  0.03)
+
+        # General battlefield experience (every command)
+        _inc("Veteran", 0.01)
+
+        player.reputation = rep
+
         # Log Authority Change
         auth_log = AuthorityLog(
             war_id=war.id,
@@ -201,7 +236,7 @@ async def submit_command(war_id: UUID, cmd: CommandRequest, db: AsyncSession = D
             context_snapshot=judgment_context
         )
         db.add(auth_log)
-        
+
         # Log Action
         action_log = ActionLog(
             war_id=war.id,
@@ -212,12 +247,12 @@ async def submit_command(war_id: UUID, cmd: CommandRequest, db: AsyncSession = D
             cixus_evaluation=judgment
         )
         db.add(action_log)
-        
+
         # Stamp last activity time for authority decay tracking
         war.last_command_at = datetime.now(timezone.utc)
 
         await db.commit()
-        
+
         return {
             "turn_id": turn_result.turn_id,
             "instructions": [i.model_dump() for i in turn_result.instructions],
@@ -226,7 +261,9 @@ async def submit_command(war_id: UUID, cmd: CommandRequest, db: AsyncSession = D
             "friction": friction.model_dump(),
             "intent": game_command.intent.model_dump() if game_command.intent else None,
             "meta_intent": game_command.meta_intent,
-            "sitrep": formatted_sitrep # Return to frontend for log
+            "sitrep": formatted_sitrep,
+            "reputation": rep,           # ← merged into localStorage by frontend
+            "authority_points": player.authority_points,
         }
     except Exception as e:
         import traceback

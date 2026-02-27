@@ -591,6 +591,19 @@ const GameContainer = () => {
             if (res.data.sitrep) {
                 setLogs(prev => [...prev, makeLog({ type: 'system', text: `SITREP: ${res.data.sitrep}`, isSitrep: true })]);
             }
+
+            // ── Merge live reputation + AP back into localStorage so Dashboard stays current
+            if (res.data.reputation || res.data.authority_points !== undefined) {
+                try {
+                    const stored = JSON.parse(localStorage.getItem('cixus_player') || '{}');
+                    const updated = {
+                        ...stored,
+                        ...(res.data.reputation ? { reputation: res.data.reputation } : {}),
+                        ...(res.data.authority_points !== undefined ? { authority_points: res.data.authority_points } : {}),
+                    };
+                    localStorage.setItem('cixus_player', JSON.stringify(updated));
+                } catch (_) { /* localStorage unavailable — non-fatal */ }
+            }
         } catch (err) {
             const errMsg = err.response?.data?.detail || err.message;
             pushToast({ message: `Transmission failed: ${errMsg}`, type: 'error' });
