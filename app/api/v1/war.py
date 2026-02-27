@@ -239,18 +239,25 @@ async def get_state(war_id: UUID, db: AsyncSession = Depends(get_db)):
     if not war:
         raise HTTPException(status_code=404, detail="War not found")
 
-    # ── Authority decay: -5 AP per idle minute, floor at 20 ──────────────────
-    player = await db.get(Player, war.player_id)
-    base_ap = player.authority_points if player and player.authority_points is not None else 100
+    # ── Authority decay: -5 AP per idle minute, floor 20 ──────────────────
+    try:
+        player = await db.get(Player, war.player_id)
+        base_ap = (player.authority_points if player and player.authority_points is not None else 100)
 
-    if war.last_command_at:
-        idle_seconds = (datetime.now(timezone.utc) - war.last_command_at).total_seconds()
-        idle_minutes = max(0, idle_seconds / 60)
-        # Grace period: no decay in the first 2 minutes
-        decayed_ap = max(20, base_ap - max(0, (idle_minutes - 2) * 5))
-    else:
         decayed_ap = base_ap
+        if war.last_command_at:
+            now = datetime.now(timezone.utc)
+            lca = war.last_command_at
+            # SQLite returns naive datetimes — attach UTC so subtraction works
+            if lca.tzinfo is None:
+                lca = lca.replace(tzinfo=timezone.utc)
+            idle_minutes = max(0, (now - lca).total_seconds() / 60)
+            # 2-minute grace period, then -5 AP/min
+            decayed_ap = max(20, base_ap - max(0, (idle_minutes - 2) * 5))
+    except Exception as e:
+        print(f"[get_state] authority decay error (non-fatal): {e}")
+        decayed_ap = 100  # safe fallback
 
-    snapshot = dict(war.current_state_snapshot)
+    snapshot = dict(war.current_state_snapshot or {})
     snapshot["player_authority"] = round(decayed_ap)
     return snapshot
