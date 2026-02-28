@@ -248,6 +248,18 @@ export function addBattleEvent(type, data) {
     if (BATTLE_EVENTS.length > 40) BATTLE_EVENTS.shift();
 }
 
+// ── Command reaction system ──────────────────────────────────────────────────
+// When a command is issued, friendly dots surge/align visually for ~4 seconds
+const REACTION = { type: null, born: 0 }; // 'attack' | 'defend' | 'retreat' | 'generic'
+export function addBattleReaction(cmdText) {
+    const t = (cmdText || '').toLowerCase();
+    let type = 'generic';
+    if (/attack|assault|flank|charge|advance|push/.test(t)) type = 'attack';
+    else if (/defend|fortif|hold|brace|shield/.test(t)) type = 'defend';
+    else if (/retreat|withdraw|pull.?back|fall.?back/.test(t)) type = 'retreat';
+    REACTION.type = type;
+    REACTION.born = performance.now();
+}
 const BattlefieldCanvas = memo(({ fogEnabled, warTurn }) => {
     const canvasRef = useRef(null);
     const rafRef = useRef(null);
@@ -332,13 +344,24 @@ const BattlefieldCanvas = memo(({ fogEnabled, warTurn }) => {
                 });
             }
 
-            // ── Friendly swarm ────────────────────────────────────────────
+            // ── Friendly swarm (+ command reaction) ──────────────────────
+            const now_ms = performance.now();
+            const rxAge = (now_ms - REACTION.born) / 1000;
+            const rxEase = REACTION.type && rxAge < 4.0 ? 1 - (rxAge / 4.0) ** 2 : 0;
+            let rxDy = 0, rxJitter = 0;
+            if (rxEase > 0) {
+                if (REACTION.type === 'attack') { rxDy = -0.04 * rxEase; rxJitter = 2.5 * rxEase; }
+                if (REACTION.type === 'defend') { rxDy = 0.01 * rxEase; rxJitter = 1.2 * rxEase; }
+                if (REACTION.type === 'retreat') { rxDy = 0.06 * rxEase; rxJitter = 1.0 * rxEase; }
+                if (REACTION.type === 'generic') { rxJitter = 1.8 * rxEase; }
+            }
             ctx.fillStyle = 'rgba(220,38,38,0.6)';
             FRIENDLY_SWARM.forEach(f => {
-                const jx = Math.sin(t * f.spd + f.phase) * f.r;
-                const jy = Math.cos(t * f.spd * 0.8 + f.phase) * f.r;
+                const jMag = f.r + rxJitter;
+                const jx = Math.sin(t * f.spd + f.phase) * jMag;
+                const jy = Math.cos(t * f.spd * 0.8 + f.phase) * jMag;
                 ctx.beginPath();
-                ctx.arc(f.x * W + jx, f.y * H + jy, 1, 0, Math.PI * 2);
+                ctx.arc(f.x * W + jx, (f.y + rxDy) * H + jy, 1, 0, Math.PI * 2);
                 ctx.fill();
             });
 
@@ -481,11 +504,11 @@ const GameContainer = () => {
                 const res = await api.get(`/api/v1/war/${warId}/state`);
                 setGameState({
                     turn: res.data.turn_count,
-                    player_authority: 100,
+                    player_authority: res.data.player_authority ?? 100,
                     status: res.data.general_status,
                     units: [
-                        ...res.data.player_units,
-                        ...(res.data.enemy_units || []).map(u => ({ ...u, isEnemy: true })),
+                        ...(res.data.player_units || []),
+                        ...((res.data.enemy_units || []).map(u => ({ ...u, isEnemy: true }))),
                     ],
                 });
             } catch (err) {
@@ -543,16 +566,19 @@ const GameContainer = () => {
             const res = await api.post(`/api/v1/war/${warId}/command`, { type: 'text', content: cmdText });
 
             if (res.data.new_state) {
-                setGameState({
+                setGameState(prev => ({
+                    ...prev,
                     turn: res.data.new_state.turn_count,
-                    player_authority: 100,
+                    player_authority: res.data.authority_points ?? prev?.player_authority ?? 100,
                     units: [
-                        ...res.data.new_state.player_units,
-                        ...(res.data.new_state.enemy_units || []).map(u => ({ ...u, isEnemy: true })),
+                        ...(res.data.new_state.player_units || []),
+                        ...((res.data.new_state.enemy_units || []).map(u => ({ ...u, isEnemy: true }))),
                     ],
-                });
+                }));
             }
 
+            // Trigger command reaction on the battlefield canvas
+            addBattleReaction(cmdText);
             const friction = res.data.friction;
             const instructions = res.data.instructions;
             const refusal = instructions.find(i => i.action === 'HOLD' && i.parameters.reason && i.parameters.reason !== 'INSUFFICIENT_AUTHORITY');
@@ -592,16 +618,28 @@ const GameContainer = () => {
                 setLogs(prev => [...prev, makeLog({ type: 'system', text: `SITREP: ${res.data.sitrep}`, isSitrep: true })]);
             }
 
-            // ── Merge live reputation + AP back into localStorage so Dashboard stays current
+            // ── Merge live reputation + AP into localStorage + show trait notification
             if (res.data.reputation || res.data.authority_points !== undefined) {
                 try {
                     const stored = JSON.parse(localStorage.getItem('cixus_player') || '{}');
-                    const updated = {
+                    const oldRep = stored.reputation || {};
+                    const newRep = res.data.reputation || oldRep;
+                    // Find trait that grew most this turn
+                    const topTrait = Object.entries(newRep)
+                        .map(([k, v]) => [k, v - (oldRep[k] || 0)])
+                        .filter(([, d]) => d > 0)
+                        .sort((a, b) => b[1] - a[1])[0];
+                    if (topTrait) {
+                        setLogs(prev => [...prev, makeLog({
+                            type: 'system',
+                            text: `REPUTATION: ${topTrait[0].toUpperCase()} \u2191 ${Math.round(newRep[topTrait[0]] * 100)}%`,
+                        })]);
+                    }
+                    localStorage.setItem('cixus_player', JSON.stringify({
                         ...stored,
                         ...(res.data.reputation ? { reputation: res.data.reputation } : {}),
                         ...(res.data.authority_points !== undefined ? { authority_points: res.data.authority_points } : {}),
-                    };
-                    localStorage.setItem('cixus_player', JSON.stringify(updated));
+                    }));
                 } catch (_) { /* localStorage unavailable — non-fatal */ }
             }
         } catch (err) {
@@ -752,7 +790,7 @@ const GameContainer = () => {
                         return (
                             <div
                                 className="absolute pointer-events-none"
-                                style={{ left: `${friendlyUnits[0]?.position?.x ?? 22}%`, top: `${friendlyUnits[0]?.position?.z ?? friendlyUnits[0]?.position?.y ?? 65}%`, zIndex: 30, transform: 'translate(-50%,-50%)' }}
+                                style={{ left: '24%', top: '73%', zIndex: 30, transform: 'translate(-50%,-50%)' }}
                             >
                                 <motion.div
                                     animate={{ scale: [1, 2.4, 1], opacity: [0.45, 0, 0.45] }}

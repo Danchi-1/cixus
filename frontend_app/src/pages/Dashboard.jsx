@@ -52,7 +52,15 @@ const Dashboard = () => {
 
     if (!player) return null;
 
-    const authorityPct = Math.min(100, ((player.authority_points || 100) / 200) * 100);
+    const authorityPct = Math.min(100, (player.authority_points || 100));
+
+    // Top 3 reputation traits sorted by value, fallback when no data yet
+    const repTags = Object.entries(player.reputation || {})
+        .filter(([, v]) => v > 0)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3)
+        .map(([k]) => k.toUpperCase());
+    const displayTags = repTags.length >= 3 ? repTags : ['UNKNOWN', 'RISING', 'UNTESTED'].slice(0, 3 - repTags.length).concat(repTags).reverse();
 
     return (
         <div className="min-h-screen bg-obsidian-950 text-obsidian-500 overflow-x-hidden">
@@ -104,8 +112,8 @@ const Dashboard = () => {
                         <Wifi className="w-4 h-4 text-gold-500 shrink-0" />
                         <div className="flex-1 min-w-0">
                             <div className="flex justify-between text-[9px] font-bold tracking-widest text-obsidian-500 uppercase mb-1.5">
-                                <span>Neural Sync Stability</span>
-                                <span className="text-gold-500">{player.authority_points || 100} / 200</span>
+                                <span>Command Authority</span>
+                                <span className="text-gold-500">{player.authority_points || 100} / 100</span>
                             </div>
                             <div className="w-full h-1.5 bg-obsidian-800 rounded-full overflow-hidden">
                                 <motion.div
@@ -118,7 +126,7 @@ const Dashboard = () => {
                         </div>
                     </div>
                     <div className="flex gap-2 shrink-0">
-                        {['RUTHLESS', 'PRECISE', 'FEARED'].map((tag, i) => (
+                        {displayTags.map((tag, i) => (
                             <span key={tag} className={`px-2 py-0.5 text-[8px] font-bold tracking-widest border rounded-sm
                                 ${i === 0 ? 'border-crimson-900/60 text-crimson-700 bg-crimson-950/30' :
                                     i === 1 ? 'border-gold-900/60 text-gold-700 bg-gold-950/20' :
