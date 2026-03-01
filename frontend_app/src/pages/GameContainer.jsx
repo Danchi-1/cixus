@@ -249,16 +249,30 @@ export function addBattleEvent(type, data) {
 }
 
 // ── Command reaction system ──────────────────────────────────────────────────
-// When a command is issued, friendly dots surge/align visually for ~4 seconds
-const REACTION = { type: null, born: 0 }; // 'attack' | 'defend' | 'retreat' | 'generic'
+// 'attack'|'charge'|'flank-left'|'flank-right'|'defend'|'dig-in'|'retreat'|'generic'
+const REACTION = { type: null, born: 0 };
+// Permanent casualty set — dead friendly dots are skipped each frame
+const DEAD_FRIENDLY = new Set();
+
 export function addBattleReaction(cmdText) {
     const t = (cmdText || '').toLowerCase();
     let type = 'generic';
-    if (/attack|assault|flank|charge|advance|push/.test(t)) type = 'attack';
-    else if (/defend|fortif|hold|brace|shield/.test(t)) type = 'defend';
+    if (/flank.?left|left.?flank/.test(t)) type = 'flank-left';
+    else if (/flank.?right|right.?flank/.test(t)) type = 'flank-right';
+    else if (/charge|assault|advance|push/.test(t)) type = 'charge';
+    else if (/attack|flank/.test(t)) type = 'attack';
+    else if (/dig.?in|fortif|brace|entrench/.test(t)) type = 'dig-in';
+    else if (/defend|hold|shield/.test(t)) type = 'defend';
     else if (/retreat|withdraw|pull.?back|fall.?back/.test(t)) type = 'retreat';
     REACTION.type = type;
     REACTION.born = performance.now();
+    // Casualties on offensive commands
+    if (type === 'attack' || type === 'charge' || type === 'flank-left' || type === 'flank-right') {
+        const count = 3 + Math.floor(Math.random() * 8);
+        for (let i = 0; i < count; i++) {
+            DEAD_FRIENDLY.add(Math.floor(Math.random() * FRIENDLY_SWARM.length));
+        }
+    }
 }
 const BattlefieldCanvas = memo(({ fogEnabled, warTurn }) => {
     const canvasRef = useRef(null);
@@ -344,26 +358,36 @@ const BattlefieldCanvas = memo(({ fogEnabled, warTurn }) => {
                 });
             }
 
-            // ── Friendly swarm (+ command reaction) ──────────────────────
+            // ── Friendly swarm (+ command reaction + casualties) ──────────
             const now_ms = performance.now();
             const rxAge = (now_ms - REACTION.born) / 1000;
-            const rxEase = REACTION.type && rxAge < 4.0 ? 1 - (rxAge / 4.0) ** 2 : 0;
-            let rxDy = 0, rxJitter = 0;
-            if (rxEase > 0) {
-                if (REACTION.type === 'attack') { rxDy = -0.04 * rxEase; rxJitter = 2.5 * rxEase; }
-                if (REACTION.type === 'defend') { rxDy = 0.01 * rxEase; rxJitter = 1.2 * rxEase; }
-                if (REACTION.type === 'retreat') { rxDy = 0.06 * rxEase; rxJitter = 1.0 * rxEase; }
-                if (REACTION.type === 'generic') { rxJitter = 1.8 * rxEase; }
+            // Sine bell: 0 at start, peak at ~2s, back to 0 at 4s — no teleport
+            const rxSine = (REACTION.type && rxAge < 4.0)
+                ? Math.sin(rxAge * Math.PI / 4) * Math.max(0, 1 - rxAge / 4)
+                : 0;
+            let rxDy = 0, rxDx = 0, rxJitterMul = 1;
+            if (rxSine > 0) {
+                const r = REACTION.type;
+                if (r === 'charge') { rxDy = -0.06 * rxSine; rxJitterMul = 1 + 2.0 * rxSine; }
+                if (r === 'attack') { rxDy = -0.04 * rxSine; rxJitterMul = 1 + 1.5 * rxSine; }
+                if (r === 'flank-left') { rxDx = -0.08 * rxSine; rxDy = -0.02 * rxSine; rxJitterMul = 1 + 1.5 * rxSine; }
+                if (r === 'flank-right') { rxDx = 0.08 * rxSine; rxDy = -0.02 * rxSine; rxJitterMul = 1 + 1.5 * rxSine; }
+                if (r === 'dig-in') { rxJitterMul = Math.max(0.05, 1 - 0.95 * rxSine); } // snap tight
+                if (r === 'defend') { rxDy = 0.01 * rxSine; rxJitterMul = Math.max(0.2, 1 - 0.8 * rxSine); }
+                if (r === 'retreat') { rxDy = 0.07 * rxSine; rxJitterMul = 1 + 0.8 * rxSine; }
+                if (r === 'generic') { rxJitterMul = 1 + 1.8 * rxSine; }
             }
             ctx.fillStyle = 'rgba(220,38,38,0.6)';
-            FRIENDLY_SWARM.forEach(f => {
-                const jMag = f.r + rxJitter;
+            FRIENDLY_SWARM.forEach((f, idx) => {
+                if (DEAD_FRIENDLY.has(idx)) return;   // casualty — skip
+                const jMag = f.r * rxJitterMul;
                 const jx = Math.sin(t * f.spd + f.phase) * jMag;
                 const jy = Math.cos(t * f.spd * 0.8 + f.phase) * jMag;
                 ctx.beginPath();
-                ctx.arc(f.x * W + jx, (f.y + rxDy) * H + jy, 1, 0, Math.PI * 2);
+                ctx.arc((f.x + rxDx) * W + jx, (f.y + rxDy) * H + jy, 1, 0, Math.PI * 2);
                 ctx.fill();
             });
+
 
             // ── Bullet tracers ────────────────────────────────────────────
             BULLETS.forEach(b => {

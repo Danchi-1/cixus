@@ -285,6 +285,60 @@ function scheduleHeartbeat(authority) {
     _heartbeatTimer = setTimeout(() => scheduleHeartbeat(_currentAuthority), interval);
 }
 
+// ── Background Music (looping Am tension arpeggio) ──────────────────────────
+const BGM_NOTES = [110, 130.8, 164.8, 196, 220, 196, 164.8, 130.8]; // A2 C3 E3 G3 A3
+const BGM_NOTE_DUR = 0.65;  // seconds per note
+const BGM_PHRASE_LEN = BGM_NOTES.length * BGM_NOTE_DUR;
+let _bgmTimer = null;
+let _bgmRunning = false;
+
+function scheduleBGMPhrase(phraseStart) {
+    const c = ctx();
+    if (!c || !_bgmRunning) return;
+    BGM_NOTES.forEach((freq, i) => {
+        const noteStart = phraseStart + i * BGM_NOTE_DUR;
+        const noteEnd = noteStart + BGM_NOTE_DUR * 0.85;
+        const osc = c.createOscillator();
+        const gain = c.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0, noteStart);
+        gain.gain.linearRampToValueAtTime(0.025 * _volume, noteStart + 0.07);
+        gain.gain.setValueAtTime(0.025 * _volume, noteEnd - 0.10);
+        gain.gain.linearRampToValueAtTime(0, noteEnd);
+        // Subtle octave harmonic
+        const osc2 = c.createOscillator();
+        const gain2 = c.createGain();
+        osc2.type = 'sine';
+        osc2.frequency.value = freq * 2;
+        gain2.gain.setValueAtTime(0, noteStart);
+        gain2.gain.linearRampToValueAtTime(0.008 * _volume, noteStart + 0.07);
+        gain2.gain.linearRampToValueAtTime(0, noteEnd);
+        osc.connect(gain); gain.connect(c.destination);
+        osc2.connect(gain2); gain2.connect(c.destination);
+        osc.start(noteStart); osc.stop(noteEnd + 0.05);
+        osc2.start(noteStart); osc2.stop(noteEnd + 0.05);
+    });
+    // Schedule next phrase 0.5s before this one ends
+    const msUntilNext = (BGM_PHRASE_LEN - 0.5) * 1000;
+    _bgmTimer = setTimeout(() => {
+        if (!_bgmRunning) return;
+        scheduleBGMPhrase(c.currentTime + 0.5);
+    }, msUntilNext);
+}
+
+function startBGMLoop() {
+    const c = ctx();
+    if (!c || _bgmRunning) return;
+    _bgmRunning = true;
+    scheduleBGMPhrase(c.currentTime + 1.0); // 1s fade-in before first note
+}
+
+function stopBGMLoop() {
+    _bgmRunning = false;
+    clearTimeout(_bgmTimer);
+    _bgmTimer = null;
+}
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
@@ -300,10 +354,10 @@ export const SoundEngine = {
     },
 
     /** Start ambient battlefield drone. Call after first user gesture. */
-    startAmbient() { if (!_muted) startAmbientLoop(); },
+    startAmbient() { if (!_muted) { startAmbientLoop(); startBGMLoop(); } },
 
     /** Stop ambient drone (e.g. on leaving war room). */
-    stopAmbient() { stopAmbientLoop(); clearTimeout(_heartbeatTimer); },
+    stopAmbient() { stopAmbientLoop(); stopBGMLoop(); clearTimeout(_heartbeatTimer); },
 
     /**
      * Call whenever authority changes. Manages the heartbeat loop.
