@@ -49,6 +49,40 @@ async def list_active_wars(player_id: UUID, db: AsyncSession = Depends(get_db)):
         for w in wars
     ]
 
+@router.get("/history", response_model=list[dict])
+async def list_war_history(player_id: UUID, db: AsyncSession = Depends(get_db)):
+    from sqlalchemy import select
+    result = await db.execute(
+        select(WarSession)
+        .where(WarSession.player_id == player_id)
+        .where(WarSession.status != "ACTIVE")
+        .order_by(WarSession.started_at.desc())
+        .limit(10)
+    )
+    wars = result.scalars().all()
+    history = []
+    for w in wars:
+        # Derive outcome from snapshot — commander alive = SURVIVED
+        snapshot = w.current_state_snapshot or {}
+        player_units = snapshot.get("player_units", [])
+        commander = next((u for u in player_units if "COMMANDER" in (u.get("tags") or []) or u.get("type") == "COMMANDER"), None)
+        outcome = "SURVIVED" if (commander and (commander.get("health") or 0) > 0) else "FELL"
+        # Duration in minutes
+        duration = None
+        if w.started_at and w.ended_at:
+            duration = int((w.ended_at - w.started_at).total_seconds() / 60)
+        history.append({
+            "war_id": str(w.id),
+            "turn": w.turn_count,
+            "outcome": outcome,
+            "started_at": w.started_at.isoformat() if w.started_at else None,
+            "ended_at": w.ended_at.isoformat() if w.ended_at else None,
+            "duration_minutes": duration,
+            "status": w.status,
+        })
+    return history
+
+
 @router.post("/start", response_model=dict)
 async def start_war(req: CreateWarRequest, db: AsyncSession = Depends(get_db)):
     player = await db.get(Player, req.player_id)
@@ -192,6 +226,19 @@ async def submit_command(war_id: UUID, cmd: CommandRequest, db: AsyncSession = D
         current_ap = player.authority_points or 100
         player.authority_points = max(0, min(100, current_ap + delta))
 
+        # ── 9. Authority level progression ────────────────────────────────────
+        LEVEL_THRESHOLDS = {2: 200, 3: 600, 4: 1200, 5: 2500}
+        leveled_up = False
+        new_level = player.authority_level or 1
+        if delta > 0:
+            player.total_ap_earned = (player.total_ap_earned or 0) + delta
+            for lvl, threshold in sorted(LEVEL_THRESHOLDS.items()):
+                if player.total_ap_earned >= threshold and new_level < lvl:
+                    new_level = lvl
+                    leveled_up = True
+            if leveled_up:
+                player.authority_level = new_level
+
         # ── 8. Derive reputation signals from this command ────────────────────
         rep = dict(player.reputation or {})
         intent = game_command.intent
@@ -262,8 +309,11 @@ async def submit_command(war_id: UUID, cmd: CommandRequest, db: AsyncSession = D
             "intent": game_command.intent.model_dump() if game_command.intent else None,
             "meta_intent": game_command.meta_intent,
             "sitrep": formatted_sitrep,
-            "reputation": rep,           # ← merged into localStorage by frontend
+            "reputation": rep,
             "authority_points": player.authority_points,
+            "authority_level": player.authority_level,
+            "leveled_up": leveled_up,
+            "total_ap_earned": player.total_ap_earned,
         }
     except Exception as e:
         import traceback

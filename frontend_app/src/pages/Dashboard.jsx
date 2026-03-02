@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Shield, Activity, Skull, Terminal, Swords, ChevronRight, LogOut, Wifi } from 'lucide-react';
+import { Shield, Activity, Skull, Terminal, Swords, ChevronRight, LogOut, Wifi, Clock, Trophy } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api';
 import { ToastContainer, useToasts } from '../components/ErrorToast';
@@ -10,6 +10,7 @@ const Dashboard = () => {
     const [player, setPlayer] = useState(null);
     const [loadingWar, setLoadingWar] = useState(false);
     const [activeWars, setActiveWars] = useState([]);
+    const [warHistory, setWarHistory] = useState([]);
     const { toasts, pushToast, dismissToast } = useToasts();
 
     useEffect(() => {
@@ -27,7 +28,16 @@ const Dashboard = () => {
                 pushToast({ message: `Failed to load conflicts: ${err.response?.data?.detail || err.message}`, type: 'error' });
             }
         };
+        const fetchHistory = async () => {
+            try {
+                const res = await api.get(`/api/v1/war/history?player_id=${parsedPlayer.id}`);
+                setWarHistory(res.data);
+            } catch (err) {
+                console.error('Failed to load history:', err);
+            }
+        };
         fetchWars();
+        fetchHistory();
 
     }, [navigate]);
 
@@ -295,6 +305,64 @@ const Dashboard = () => {
                             </motion.div>
                         )}
                     </motion.div>
+
+                    {/* ── WAR HISTORY ──────────────────────────────────────── */}
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.2 }}
+                        className="lg:col-span-2"
+                    >
+                        <div className="flex items-center gap-2 mb-3">
+                            <Clock className="w-4 h-4 text-gold-700 shrink-0" />
+                            <h2 className="text-base sm:text-lg font-bold tracking-tight text-obsidian-400">COMBAT HISTORY</h2>
+                            {warHistory.length > 0 && (
+                                <span className="ml-1 px-1.5 py-0.5 text-[9px] font-bold bg-obsidian-900/60 border border-obsidian-700 text-obsidian-500 rounded-sm">
+                                    {warHistory.length}
+                                </span>
+                            )}
+                        </div>
+
+                        {warHistory.length > 0 ? (
+                            <div className="grid gap-2">
+                                {warHistory.map((war, idx) => (
+                                    <motion.div
+                                        key={war.war_id}
+                                        initial={{ opacity: 0, x: -10 }}
+                                        animate={{ opacity: 1, x: 0 }}
+                                        transition={{ delay: idx * 0.04 }}
+                                        className="bg-obsidian-900/30 border border-obsidian-800 px-4 py-3 rounded-sm flex items-center justify-between gap-3"
+                                    >
+                                        <div className="flex items-center gap-3 min-w-0">
+                                            <Trophy className={`w-3.5 h-3.5 shrink-0 ${war.outcome === 'SURVIVED' ? 'text-gold-600' : 'text-obsidian-700'}`} />
+                                            <div className="min-w-0">
+                                                <p className="text-xs font-bold text-obsidian-400 font-mono truncate">
+                                                    OP-{war.war_id.substring(0, 8).toUpperCase()}
+                                                </p>
+                                                <p className="text-[9px] text-obsidian-700 font-mono mt-0.5">
+                                                    T-{war.turn} turns
+                                                    {war.duration_minutes != null && ` · ${war.duration_minutes}m`}
+                                                    {war.started_at && ` · ${new Date(war.started_at).toLocaleDateString()}`}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <span className={`shrink-0 px-2 py-0.5 text-[8px] font-bold tracking-widest border rounded-sm
+                                            ${war.outcome === 'SURVIVED'
+                                                ? 'border-gold-800/60 text-gold-600 bg-gold-950/20'
+                                                : 'border-crimson-900/50 text-crimson-700 bg-crimson-950/20'
+                                            }`}>
+                                            {war.outcome}
+                                        </span>
+                                    </motion.div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="border border-dashed border-obsidian-800 rounded-sm p-6 text-center">
+                                <p className="text-[10px] text-obsidian-700 font-mono uppercase tracking-widest">No past campaigns on record.</p>
+                            </div>
+                        )}
+                    </motion.div>
+
                 </div>
             </main>
         </div>

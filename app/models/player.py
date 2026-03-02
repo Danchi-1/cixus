@@ -19,6 +19,7 @@ class Player(Base):
     # Authority System
     authority_level: Mapped[int] = mapped_column(Integer, default=1)
     authority_points: Mapped[int] = mapped_column(Integer, default=100)
+    total_ap_earned: Mapped[int] = mapped_column(Integer, default=0)  # cumulative across all wars
     
     # AI State
     prelude_seen: Mapped[bool] = mapped_column(Boolean, default=False)

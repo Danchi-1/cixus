@@ -35,6 +35,7 @@ async def lifespan(app: FastAPI):
         "ALTER TABLE players ADD COLUMN ip_address VARCHAR",
         "ALTER TABLE players ADD COLUMN last_seen_ip VARCHAR",
         "ALTER TABLE war_sessions ADD COLUMN last_command_at TIMESTAMP WITH TIME ZONE",
+        "ALTER TABLE players ADD COLUMN total_ap_earned INTEGER DEFAULT 0",
     ]
     try:
         async with engine.begin() as conn:

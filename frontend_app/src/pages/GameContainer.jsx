@@ -750,7 +750,7 @@ const GameContainer = () => {
                 setLogs(prev => [...prev, makeLog({ type: 'system', text: `SITREP: ${res.data.sitrep}`, isSitrep: true })]);
             }
 
-            // ── Merge live reputation + AP into localStorage + show trait notification
+            // ── Merge live reputation + AP + level into localStorage
             if (res.data.reputation || res.data.authority_points !== undefined) {
                 try {
                     const stored = JSON.parse(localStorage.getItem('cixus_player') || '{}');
@@ -767,13 +767,28 @@ const GameContainer = () => {
                             text: `REPUTATION: ${topTrait[0].toUpperCase()} \u2191 ${Math.round(newRep[topTrait[0]] * 100)}%`,
                         })]);
                     }
+                    // Level-up notification
+                    if (res.data.leveled_up && res.data.authority_level) {
+                        const lvl = res.data.authority_level;
+                        const labels = { 2: 'FIELD OPERATIVE', 3: 'WAR VETERAN', 4: 'BATTLE COMMANDER', 5: 'SUPREME WARLORD' };
+                        setTimeout(() => SoundEngine.play('authorityGain'), 100);
+                        setTimeout(() => SoundEngine.play('authorityGain'), 700);
+                        setLogs(prev => [...prev, makeLog({
+                            type: 'system',
+                            text: `\u2605 PROMOTION — AUTHORITY LEVEL ${lvl}: ${labels[lvl] || 'COMMANDER'} \u2605`,
+                            isLevelUp: true,
+                        })]);
+                    }
                     localStorage.setItem('cixus_player', JSON.stringify({
                         ...stored,
                         ...(res.data.reputation ? { reputation: res.data.reputation } : {}),
                         ...(res.data.authority_points !== undefined ? { authority_points: res.data.authority_points } : {}),
+                        ...(res.data.authority_level !== undefined ? { authority_level: res.data.authority_level } : {}),
+                        ...(res.data.total_ap_earned !== undefined ? { total_ap_earned: res.data.total_ap_earned } : {}),
                     }));
                 } catch (_) { /* localStorage unavailable — non-fatal */ }
             }
+
         } catch (err) {
             const errMsg = err.response?.data?.detail || err.message;
             pushToast({ message: `Transmission failed: ${errMsg}`, type: 'error' });
