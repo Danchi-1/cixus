@@ -353,8 +353,17 @@ export const SoundEngine = {
         }
     },
 
-    /** Start ambient battlefield drone. Call after first user gesture. */
-    startAmbient() { if (!_muted) { startAmbientLoop(); startBGMLoop(); } },
+    /** Start ambient battlefield drone + BGM. Call after first user gesture. */
+    startAmbient() {
+        const c = ctx();
+        if (!c) return;
+        const doStart = () => { if (!_muted) { startAmbientLoop(); startBGMLoop(); } };
+        if (c.state === 'suspended') {
+            c.resume().then(doStart).catch(() => { });
+        } else {
+            doStart();
+        }
+    },
 
     /** Stop ambient drone (e.g. on leaving war room). */
     stopAmbient() { stopAmbientLoop(); stopBGMLoop(); clearTimeout(_heartbeatTimer); },

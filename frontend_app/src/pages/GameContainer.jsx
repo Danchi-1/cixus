@@ -498,13 +498,31 @@ const GameContainer = () => {
     const prevAuthRef = useRef(100);
     const extremePanelRef = useRef(null); // for auto-scroll on expand
 
-    // Init SoundEngine + war-start sound + ambient rumble on mount
+    // Init SoundEngine — audio starts on FIRST user gesture (browser audio policy)
     useEffect(() => {
         SoundEngine.init();
         setSfxMuted(SoundEngine.isMuted());
-        const t1 = setTimeout(() => SoundEngine.play('warStart'), 400);
-        const t2 = setTimeout(() => SoundEngine.startAmbient(), 1200);
-        return () => { clearTimeout(t1); clearTimeout(t2); SoundEngine.stopAmbient(); };
+
+        let audioStarted = false;
+        const startAudio = () => {
+            if (audioStarted) return;
+            audioStarted = true;
+            SoundEngine.play('warStart');
+            setTimeout(() => SoundEngine.startAmbient(), 800);
+        };
+
+        // Listen for first interaction on this page
+        document.addEventListener('pointerdown', startAudio, { once: true });
+        document.addEventListener('keydown', startAudio, { once: true });
+        // Also try immediately — works when the user clicked a nav link moments ago
+        const t = setTimeout(startAudio, 50);
+
+        return () => {
+            clearTimeout(t);
+            document.removeEventListener('pointerdown', startAudio);
+            document.removeEventListener('keydown', startAudio);
+            SoundEngine.stopAmbient();
+        };
     }, []);
 
     // Scroll on new log — only when logs array length changes
