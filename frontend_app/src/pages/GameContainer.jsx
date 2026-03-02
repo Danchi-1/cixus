@@ -251,8 +251,9 @@ export function addBattleEvent(type, data) {
 // ── Command reaction system ──────────────────────────────────────────────────
 // 'attack'|'charge'|'flank-left'|'flank-right'|'defend'|'dig-in'|'retreat'|'generic'
 const REACTION = { type: null, born: 0 };
-// Permanent casualty set — dead friendly dots are skipped each frame
+// Permanent casualty sets — dead dots are skipped in the draw loop each frame
 const DEAD_FRIENDLY = new Set();
+const DEAD_ENEMY = new Set();
 
 export function addBattleReaction(cmdText) {
     const t = (cmdText || '').toLowerCase();
@@ -319,6 +320,7 @@ const BattlefieldCanvas = memo(({ fogEnabled, warTurn }) => {
         ro.observe(canvas);
 
         // ── Main draw loop ─────────────────────────────────────────────────
+        let lastClashMs = 0; // tracks when last automatic casualty event fired
         const draw = (ts) => {
             rafRef.current = requestAnimationFrame(draw);
 
@@ -342,7 +344,8 @@ const BattlefieldCanvas = memo(({ fogEnabled, warTurn }) => {
             // ── Enemy swarm ───────────────────────────────────────────────
             if (!fog) {
                 ctx.fillStyle = 'rgba(6,182,212,0.65)';
-                ENEMY_SWARM.forEach(e => {
+                ENEMY_SWARM.forEach((e, idx) => {
+                    if (DEAD_ENEMY.has(idx)) return;  // enemy casualty — skip
                     const jx = Math.sin(t * e.spd + e.phase) * e.r;
                     const jy = Math.cos(t * e.spd * 0.7 + e.phase) * e.r;
                     ctx.beginPath();
@@ -350,20 +353,34 @@ const BattlefieldCanvas = memo(({ fogEnabled, warTurn }) => {
                     ctx.fill();
                 });
             } else {
+                // Fog: only show 1-in-5 enemy dots at low opacity
                 ctx.fillStyle = 'rgba(6,182,212,0.15)';
-                ENEMY_SWARM.filter((_, i) => i % 5 === 0).forEach(e => {
+                ENEMY_SWARM.forEach((e, idx) => {
+                    if (DEAD_ENEMY.has(idx)) return;
+                    if (idx % 5 !== 0) return;
                     ctx.beginPath();
                     ctx.arc(e.x * W, (e.y + advance) * H, 1, 0, Math.PI * 2);
                     ctx.fill();
                 });
             }
 
+            // ── Auto-clash attrition: when enemy line enters friendly zone ─────
+            const clashNow = Date.now();
+            if (advance > 0.20 && clashNow - lastClashMs > 2500) {
+                lastClashMs = clashNow;
+                const kills = 2 + Math.floor(Math.random() * 4);
+                for (let i = 0; i < kills; i++) {
+                    DEAD_FRIENDLY.add(Math.floor(Math.random() * FRIENDLY_SWARM.length));
+                    DEAD_ENEMY.add(Math.floor(Math.random() * ENEMY_SWARM.length));
+                }
+            }
+
             // ── Friendly swarm (+ command reaction + casualties) ──────────
             const now_ms = performance.now();
             const rxAge = (now_ms - REACTION.born) / 1000;
-            // Sine bell: 0 at start, peak at ~2s, back to 0 at 4s — no teleport
+            // Sine bell: starts at 0, peaks at 2 s, returns to 0 at 4 s — smooth surge
             const rxSine = (REACTION.type && rxAge < 4.0)
-                ? Math.sin(rxAge * Math.PI / 4) * Math.max(0, 1 - rxAge / 4)
+                ? Math.sin(rxAge * Math.PI / 4.0)
                 : 0;
             let rxDy = 0, rxDx = 0, rxJitterMul = 1;
             if (rxSine > 0) {
@@ -585,9 +602,12 @@ const GameContainer = () => {
         setIsTransmitting(true);
         setLogs(prev => [...prev, makeLog({ type: 'user', text: cmdText })]);
         setActiveTab('log');
+        // Fire reaction immediately — don't wait for server (instant visual feedback)
+        addBattleReaction(cmdText);
 
         try {
             const res = await api.post(`/api/v1/war/${warId}/command`, { type: 'text', content: cmdText });
+
 
             if (res.data.new_state) {
                 setGameState(prev => ({
