@@ -275,6 +275,13 @@ export function addBattleReaction(cmdText) {
         }
     }
 }
+
+// ── Enemy tactical reaction system ───────────────────────────────────────────
+const ENEMY_REACTION = { type: null, born: 0 };
+export function addEnemyReaction(type) {
+    ENEMY_REACTION.type = type;
+    ENEMY_REACTION.born = performance.now();
+}
 const BattlefieldCanvas = memo(({ fogEnabled, warTurn }) => {
     const canvasRef = useRef(null);
     const rafRef = useRef(null);
@@ -341,17 +348,35 @@ const BattlefieldCanvas = memo(({ fogEnabled, warTurn }) => {
             // ── Blood layer (offscreen, one composite) ────────────────────
             if (bloodCanvas.current) ctx.drawImage(bloodCanvas.current, 0, 0);
 
-            // ── Enemy swarm ───────────────────────────────────────────────
+            // ── Enemy swarm (+ tactical reaction) ───────────────────────
+            const erAge = (performance.now() - ENEMY_REACTION.born) / 1000;
+            const erSine = (ENEMY_REACTION.type && erAge < 5.0)
+                ? Math.sin(erAge * Math.PI / 5.0)
+                : 0;
+
             if (!fog) {
                 ctx.fillStyle = 'rgba(6,182,212,0.65)';
                 ENEMY_SWARM.forEach((e, idx) => {
-                    if (DEAD_ENEMY.has(idx)) return;  // enemy casualty — skip
-                    const jx = Math.sin(t * e.spd + e.phase) * e.r;
-                    const jy = Math.cos(t * e.spd * 0.7 + e.phase) * e.r;
+                    if (DEAD_ENEMY.has(idx)) return;
+                    let erDx = 0, erDy = 0, erJ = 1;
+                    if (erSine > 0) {
+                        const er = ENEMY_REACTION.type;
+                        if (er === 'push-center') { erDy = 0.05 * erSine; }
+                        if (er === 'push-left' && e.x < 0.45) { erDy = 0.04 * erSine; erDx = -0.04 * erSine; }
+                        if (er === 'push-right' && e.x > 0.55) { erDy = 0.04 * erSine; erDx = 0.04 * erSine; }
+                        if (er === 'flank-left' && e.x < 0.28) { erDy = 0.07 * erSine; erDx = -0.10 * erSine; }
+                        if (er === 'flank-right' && e.x > 0.72) { erDy = 0.07 * erSine; erDx = 0.10 * erSine; }
+                        if (er === 'regroup') { erDy = -0.03 * erSine; erJ = Math.max(0.15, 1 - 0.85 * erSine); }
+                        if (er === 'barrage') { erJ = 1 + 3.5 * erSine; }
+                    }
+                    const jMag = e.r * erJ;
+                    const jx = Math.sin(t * e.spd + e.phase) * jMag;
+                    const jy = Math.cos(t * e.spd * 0.7 + e.phase) * jMag;
                     ctx.beginPath();
-                    ctx.arc(e.x * W + jx, (e.y + advance) * H + jy, 1, 0, Math.PI * 2);
+                    ctx.arc((e.x + erDx) * W + jx, (e.y + advance + erDy) * H + jy, 1, 0, Math.PI * 2);
                     ctx.fill();
                 });
+
             } else {
                 // Fog: only show 1-in-5 enemy dots at low opacity
                 ctx.fillStyle = 'rgba(6,182,212,0.15)';
@@ -554,6 +579,51 @@ const GameContainer = () => {
         scheduleNext();
         return () => clearTimeout(timerRef.current);
     }, []);
+
+    // ── Enemy tactical response scheduler ────────────────────────────────────
+    const ENEMY_TACTICS_SCHEDULE = [
+        { type: 'push-center', label: 'PUSH CENTER — ALL UNITS ADVANCE' },
+        { type: 'push-left', label: 'PRESSURE LEFT FLANK' },
+        { type: 'push-right', label: 'PRESSURE RIGHT FLANK' },
+        { type: 'flank-left', label: 'ENVELOP LEFT — FAST COLUMN MOVING' },
+        { type: 'flank-right', label: 'ENVELOP RIGHT — FAST COLUMN MOVING' },
+        { type: 'regroup', label: 'CONSOLIDATE & REGROUP' },
+        { type: 'barrage', label: 'ARTILLERY BARRAGE INBOUND' },
+    ];
+    useEffect(() => {
+        const timerRef = { current: null };
+        const scheduleNext = () => {
+            const delay = 20000 + Math.random() * 20000; // 20–40s
+            timerRef.current = setTimeout(() => {
+                const tactic = ENEMY_TACTICS_SCHEDULE[
+                    Math.floor(Math.random() * ENEMY_TACTICS_SCHEDULE.length)
+                ];
+                addEnemyReaction(tactic.type);
+                SoundEngine.play('commsIntercept');
+                setLogs(prev => [...prev, makeLog({
+                    type: 'system',
+                    text: `⚠ ENEMY COMMAND: ${tactic.label}`,
+                })]);
+                scheduleNext();
+            }, delay);
+        };
+        // First enemy action after 25–40s (give player time to settle)
+        timerRef.current = setTimeout(() => {
+            const first = ENEMY_TACTICS_SCHEDULE[
+                Math.floor(Math.random() * ENEMY_TACTICS_SCHEDULE.length)
+            ];
+            addEnemyReaction(first.type);
+            SoundEngine.play('commsIntercept');
+            setLogs(prev => [...prev, makeLog({
+                type: 'system',
+                text: `⚠ ENEMY COMMAND: ${first.label}`,
+            })]);
+            scheduleNext();
+        }, 25000 + Math.random() * 15000);
+        return () => clearTimeout(timerRef.current);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
 
     // Poll game state — updating ONLY gameState, never logs
     useEffect(() => {
