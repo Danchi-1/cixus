@@ -254,12 +254,9 @@ class AIOrchestrator:
         )
 
     @staticmethod
-    async def get_cixus_judgment(action_intent: dict, sitrep: dict) -> dict:
+    async def get_cixus_judgment(action_intent: dict, sitrep: dict, reputation: dict = None) -> dict:
         """
-        Evaluates the turn using Gemini (Mocked currently).
-        """
-        """
-        Evaluates the turn using Gemini.
+        Evaluates the turn using Gemini. Adapts Cixus's voice to the commander's earned reputation.
         """
         import os
         import json
@@ -282,10 +279,33 @@ class AIOrchestrator:
             model = genai.GenerativeModel('gemini-2.0-flash', 
                 generation_config={"response_mime_type": "application/json"}
             )
-            
+
+            # Build personality suffix from dominant reputation trait
+            personality_suffix = ""
+            PERSONALITY_MODIFIERS = {
+                "Ruthless":   "This commander has earned a reputation for ruthlessness. Be terse, cold, and unsparing. Do not soften blows.",
+                "Merciful":   "This commander is known for mercy. Respond with philosophical depth. Let them feel the weight of compassion without mocking it.",
+                "Aggressive": "This commander charges where others pause. Reward decisive violence. Punish hesitation. Be blunt and direct.",
+                "Defensive":  "This commander builds walls. Acknowledge patience as discipline, but note when it becomes paralysis.",
+                "Cunning":    "This commander operates through deception. Match their subtlety. Acknowledge misdirection as craft.",
+                "Reckless":   "This commander gambles lives. Be curt. Note losses without ceremony.",
+                "Calculated": "This commander is deliberate. Acknowledge precision. Note when deliberation costs tempo.",
+                "Hesitant":   "This commander wavers. Your tone is measured contempt \u2014 not mockery, disappointed precision.",
+                "Decisive":   "This commander decides quickly. Respond in kind: compact, final, authoritative.",
+                "Veteran":    "This commander has seen much. Speak as an equal witness of war, not as a teacher.",
+            }
+            if reputation:
+                top = max(reputation.items(), key=lambda x: x[1], default=(None, 0.0))
+                trait, val = top
+                if trait and val > 0.15 and trait in PERSONALITY_MODIFIERS:
+                    personality_suffix = (
+                        f"\n\n9. Voice Adaptation (Based on Observed Commander Pattern)\n\n"
+                        f"{PERSONALITY_MODIFIERS[trait]}"
+                    )
+
             prompt = f"""
-            {CIXUS_SYSTEM_PROMPT}
-            
+            {CIXUS_SYSTEM_PROMPT}{personality_suffix}
+
             INPUT DATA:
             PLAYER INTENT: {json.dumps(action_intent)}
             SITUATION REPORT: {json.dumps(sitrep)}

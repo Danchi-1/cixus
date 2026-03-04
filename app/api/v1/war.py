@@ -215,7 +215,8 @@ async def submit_command(war_id: UUID, cmd: CommandRequest, db: AsyncSession = D
         # 6. Cixus Judgment (The Judge)
         judgment = await AIOrchestrator.get_cixus_judgment(
             action_intent=game_command.model_dump(), 
-            sitrep=judgment_context
+            sitrep=judgment_context,
+            reputation=dict(player.reputation or {})
         )
         
         # 7. Apply Judgment
@@ -347,4 +348,42 @@ async def get_state(war_id: UUID, db: AsyncSession = Depends(get_db)):
 
     snapshot = dict(war.current_state_snapshot or {})
     snapshot["player_authority"] = round(decayed_ap)
+
+    # ── War-end detection ───────────────────────────────────────────────
+    war_ended = False
+    war_outcome = None
+    if war.status == "ACTIVE":
+        player_units = snapshot.get("player_units", [])
+        enemy_units  = snapshot.get("enemy_units",  [])
+        commander = next(
+            (u for u in player_units
+             if "COMMANDER" in (u.get("tags") or []) or u.get("type") == "COMMANDER"),
+            None
+        )
+        warlord = next(
+            (u for u in enemy_units
+             if "BOSS" in (u.get("tags") or []) or u.get("type") == "WARLORD"),
+            None
+        )
+        commander_dead = not commander or (commander.get("health") or 0) <= 0
+        warlord_dead   = warlord is not None and (warlord.get("health") or 0) <= 0
+
+        if commander_dead or warlord_dead:
+            war_outcome = "SURVIVED" if warlord_dead else "FELL"
+            war.status  = "ENDED"
+            war.ended_at = datetime.now(timezone.utc)
+            war_ended = True
+            try:
+                await db.commit()
+            except Exception:
+                pass
+
+    # AI model active?
+    from app.core.config import settings as _cfg
+    ai_active = bool(_cfg.GEMINI_API_KEY)
+
+    snapshot["war_ended"]       = war_ended
+    snapshot["war_outcome"]     = war_outcome
+    snapshot["war_status"]      = war.status
+    snapshot["ai_model_active"] = ai_active
     return snapshot

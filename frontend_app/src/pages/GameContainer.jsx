@@ -10,6 +10,7 @@ import api from '../api';
 import { ToastContainer, useToasts } from '../components/ErrorToast';
 import TypewriterText from '../components/TypewriterText';
 import TacticsPanel from '../components/TacticsPanel';
+import WarEndScreen from '../components/WarEndScreen';
 import SoundEngine from '../utils/SoundEngine';
 
 // ── Constants (module-level, never recreated) ─────────────────────────────────
@@ -430,6 +431,36 @@ const BattlefieldCanvas = memo(({ fogEnabled, warTurn }) => {
                 ctx.fill();
             });
 
+            // ── Formation health bars (one per echelon) ──────────────────────
+            // s/e = FRIENDLY_SWARM index range for this echelon
+            const FBAR = [
+                { label: 'E I', s: 0, e: 120, bx: 0.03, by: 0.415, bw: 0.44 },
+                { label: 'E II', s: 120, e: 240, bx: 0.01, by: 0.565, bw: 0.46 },
+                { label: 'RES', s: 240, e: FRIENDLY_SWARM.length, bx: 0.04, by: 0.715, bw: 0.43 },
+            ];
+            ctx.save();
+            FBAR.forEach(({ label, s, e, bx, by, bw }) => {
+                const total = e - s;
+                let dead = 0;
+                for (const idx of DEAD_FRIENDLY) { if (idx >= s && idx < e) dead++; }
+                const pct = Math.max(0, 1 - dead / total);
+                const px = bx * W, py = by * H, pw = bw * W, ph = 2.5;
+                // Background
+                ctx.globalAlpha = 0.35;
+                ctx.fillStyle = '#0a0a0a';
+                ctx.fillRect(px, py, pw, ph);
+                // Fill — green → amber → red
+                ctx.globalAlpha = 0.75;
+                ctx.fillStyle = pct > 0.6 ? '#4ade80' : pct > 0.3 ? '#f59e0b' : '#ef4444';
+                ctx.fillRect(px, py, pw * pct, ph);
+                // Label
+                ctx.globalAlpha = 0.45;
+                ctx.fillStyle = '#9ca3af';
+                ctx.font = `${Math.max(6, Math.floor(W * 0.007))}px monospace`;
+                ctx.fillText(`${label} ${Math.round(pct * 100)}%`, px + pw + 4, py + ph);
+            });
+            ctx.globalAlpha = 1;
+            ctx.restore();
 
             // ── Bullet tracers ────────────────────────────────────────────
             BULLETS.forEach(b => {
@@ -516,6 +547,9 @@ const GameContainer = () => {
     const [activeTab, setActiveTab] = useState('orders');
     const [extremeOpen, setExtremeOpen] = useState(false);
     const [sfxMuted, setSfxMuted] = useState(() => SoundEngine.isMuted());
+    const [warEnded, setWarEnded] = useState(false);
+    const [warOutcome, setWarOutcome] = useState(null);
+    const [aiModelActive, setAiModelActive] = useState(false);
 
     const { toasts, pushToast, dismissToast } = useToasts();
     const logsEndRef = useRef(null);
@@ -640,6 +674,20 @@ const GameContainer = () => {
                         ...((res.data.enemy_units || []).map(u => ({ ...u, isEnemy: true }))),
                     ],
                 });
+                // Update AI model active flag from every poll
+                if (res.data.ai_model_active !== undefined) setAiModelActive(res.data.ai_model_active);
+                // War ended — show result screen
+                if (res.data.war_ended && !warEnded) {
+                    setWarEnded(true);
+                    setWarOutcome(res.data.war_outcome || 'FELL');
+                    SoundEngine.stopAmbient();
+                    setLogs(prev => [...prev, makeLog({
+                        type: 'system',
+                        text: res.data.war_outcome === 'SURVIVED'
+                            ? '★ ENGAGEMENT COMPLETE — ENEMY WARLORD ELIMINATED'
+                            : '✖ COMMANDER DOWN — OPERATION FAILED',
+                    })]);
+                }
             } catch (err) {
                 if (err.response?.status === 404) {
                     pushToast({ message: 'War session ended. Returning to base.', type: 'warning', duration: 3000 });
@@ -818,8 +866,21 @@ const GameContainer = () => {
     // ── Render ────────────────────────────────────────────────────────────────
     return (
         <div className="h-screen bg-obsidian-950 flex flex-col overflow-hidden text-obsidian-300 font-mono">
+            {/* War end overlay — sits on top of everything */}
+            <AnimatePresence>
+                {warEnded && (
+                    <WarEndScreen
+                        key="war-end"
+                        outcome={warOutcome}
+                        gameState={gameState}
+                        warId={warId}
+                        aiModelActive={aiModelActive}
+                    />
+                )}
+            </AnimatePresence>
 
             <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+
 
             {isLowAuth && (
                 <div className="absolute inset-0 pointer-events-none z-50 opacity-10 bg-[url('https://media.giphy.com/media/oEI9uBYSzLpBK/giphy.gif')] bg-cover mix-blend-overlay" />
