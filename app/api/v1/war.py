@@ -185,7 +185,11 @@ async def submit_command(war_id: UUID, cmd: CommandRequest, db: AsyncSession = D
         # Validate & Clamp (Friction is verified here)
         instructions = SimulationEngine.validate_and_clamp(game_command, player, current_game_state)
         
-        turn_result = SimulationEngine.process_turn(current_game_state, instructions)
+        turn_result = SimulationEngine.process_turn(
+            current_game_state, instructions,
+            player_authority=player.authority_points or 70
+        )
+
         
         # 4. Update DB
         war.current_state_snapshot = turn_result.new_snapshot.model_dump()
