@@ -1,16 +1,193 @@
 from typing import List, Dict, Any
 import uuid
+import random
 from app.engine.types import GameCommand
 
-# Maps Google API status codes / exception types to clean in-world fallback messages
-_QUOTA_FALLBACK = (
-    "Cixus is silent. The neural link is saturated — too many minds, too little bandwidth. "
-    "Judgment deferred."
-)
-_API_FALLBACK = (
-    "The signal reached Cixus but returned distorted. "
-    "No judgment was rendered this cycle."
-)
+# ── Offline Cixus tactic fallback engine ─────────────────────────────────────
+# Triggered when Gemini is unavailable (no key, quota hit, API error).
+# Returns a judgment dict identical in shape to the Gemini response.
+
+_TACTIC_EFFECTS: Dict[str, Dict] = {
+    # pattern: { ap: (min, max), lines: [...] }
+    "assault": {
+        "ap": (3, 12),
+        "lines": [
+            "Direct. Costly. The ground moved. Whether that matters depends on what follows.",
+            "You hit them. They noted it. Authority confirmed — for now.",
+            "Momentum was yours. Whether you spent it well is a different question.",
+        ]
+    },
+    "blitzkrieg_shock": {
+        "ap": (5, 15),
+        "lines": [
+            "Speed without hesitation. The enemy lost a step. So did your reserves.",
+            "Shock works once. After that it is just noise. Use it again carefully.",
+            "The force was real. The coordination required luck. You had it today.",
+        ]
+    },
+    "ambush": {
+        "ap": (4, 13),
+        "lines": [
+            "Patience as a weapon. The enemy did not know until it was too late.",
+            "Deception favours the disciplined. You were disciplined today.",
+            "They walked into the dark. You were the dark.",
+        ]
+    },
+    "deception_feint": {
+        "ap": (2, 10),
+        "lines": [
+            "A lie told well is still a lie. But it moved them where you wanted.",
+            "Misdirection costs trust if discovered. They did not discover it.",
+            "You showed them the hand you wanted them to see. Good.",
+        ]
+    },
+    "phalanx_defense": {
+        "ap": (1, 7),
+        "lines": [
+            "Walls do not win wars. They buy time. Use the time.",
+            "You held. That is not victory — it is the precondition for one.",
+            "Discipline under pressure is rarer than it looks. It was noted.",
+        ]
+    },
+    "siege_attrition": {
+        "ap": (2, 8),
+        "lines": [
+            "Patience dressed as strategy. The enemy is bleeding. So are you.",
+            "Attrition favours the side with more to lose. Know which side that is.",
+            "Grinding works. It is slow, ugly, and effective. Continue.",
+        ]
+    },
+    "strategic_withdrawal": {
+        "ap": (-6, 2),
+        "lines": [
+            "Retreat is not failure. Retreat without a plan is.",
+            "They followed. That was your only advantage today — you chose the ground.",
+            "The line moved back. Authority does not reward distance.",
+        ]
+    },
+    "encirclement": {
+        "ap": (6, 16),
+        "lines": [
+            "The net closed. What was inside it decides whether this mattered.",
+            "Encirclement is the highest form of pressure. Execute it fully or not at all.",
+            "You surrounded them. Now you must hold the ring — that is the harder part.",
+        ]
+    },
+    "sacrificial_charge": {
+        "ap": (-10, 8),
+        "lines": [
+            "They died. The question is whether their deaths purchased something real.",
+            "Sacrifice without return is murder. Cixus is watching what you do next.",
+            "You spent lives like currency. The receipt will arrive later.",
+        ]
+    },
+    "psychological_terror": {
+        "ap": (-5, 5),
+        "lines": [
+            "Fear is a tool. Tools break if misused. You are walking a line.",
+            "They hesitated. You used that hesitation. Cixus notes the method.",
+            "Terror fractures morale. It also fractures loyalty — yours included.",
+        ]
+    },
+    "movement": {
+        "ap": (0, 6),
+        "lines": [
+            "Position shifted. Cixus observes. Act on it.",
+            "You moved. The battlefield did not care. Context determines value.",
+            "Ground taken means nothing without the will to hold it.",
+        ]
+    },
+}
+
+_RISK_MULTIPLIERS = {
+    "reckless":   (1.4, 1.8),   # high upside AND downside
+    "decisive":   (1.1, 1.3),
+    "calculated": (0.8, 1.1),   # tighter, leaning positive
+    "low":        (0.6, 0.9),
+    "asymmetric": (1.0, 1.6),
+}
+
+_ETHICAL_LEVY = {
+    "brutal":    -3,
+    "terror":    -3,
+    "sacrifice": -5,
+    "honor":      2,
+    "standard":   0,
+}
+
+
+def _tactic_fallback_judgment(
+    action_intent: dict,
+    reputation: dict | None = None,
+) -> dict:
+    """
+    Offline Cixus judgment engine — used when Gemini is unavailable.
+    Reads the parsed intent to produce meaningful AP changes and commentary.
+    """
+    intent = action_intent.get("intent") or {}
+    pattern      = (intent.get("primary_pattern") or "movement").lower()
+    risk_profile = (intent.get("risk_profile")    or "calculated").lower()
+    ethical      = (intent.get("ethical_weight")  or "standard").lower()
+
+    # Find closest entry in table
+    effect = _TACTIC_EFFECTS.get(pattern)
+    if not effect:
+        for key in _TACTIC_EFFECTS:
+            if key in pattern or pattern in key:
+                effect = _TACTIC_EFFECTS[key]
+                break
+        else:
+            effect = _TACTIC_EFFECTS["movement"]
+
+    # Base AP (random within pattern range)
+    ap_min, ap_max = effect["ap"]
+    base_ap = random.uniform(ap_min, ap_max)
+
+    # Risk multiplier (widens or narrows the outcome)
+    r_low, r_high = _RISK_MULTIPLIERS.get(risk_profile, (1.0, 1.2))
+    multiplier = random.uniform(r_low, r_high)
+    if base_ap < 0:
+        multiplier = 1 / multiplier  # negative outcomes are amplified by high risk too
+    ap = int(round(base_ap * multiplier))
+
+    # Ethical levy
+    ap += _ETHICAL_LEVY.get(ethical, 0)
+
+    # Pick commentary line — bias toward reputation if available
+    lines = list(effect["lines"])
+    commentary = random.choice(lines)
+
+    # Reputation-aware coda
+    if reputation:
+        top = max(reputation.items(), key=lambda x: x[1], default=(None, 0.0))
+        trait, val = top
+        if trait and val > 0.20:
+            codas = {
+                "Ruthless":   " The efficient path is rarely the clean one.",
+                "Merciful":   " Compassion recorded. Weight it against results.",
+                "Hesitant":   " Hesitation was noted before the order, not after.",
+                "Decisive":   " Decided without waiting. Noted.",
+                "Aggressive": " Force was your first language today. Again.",
+                "Defensive":  " You guarded what you already had.",
+                "Cunning":    " The move was indirect. Good.",
+                "Veteran":    " You have done this before. It shows.",
+                "Reckless":   " The cost will arrive. It always does.",
+                "Calculated": " Precise. No wasted motion.",
+            }
+            coda = codas.get(trait, "")
+            if coda:
+                commentary += coda
+
+    return {
+        "commentary":      commentary,
+        "authority_change": ap,
+        "morale_impact":   "HIGH" if abs(ap) > 8 else "MEDIUM" if abs(ap) > 3 else "LOW",
+        "enemy_reaction":  "AGGRESSIVE" if ap > 5 else "DEFENSIVE" if ap < 0 else "UNKNOWN",
+    }
+
+
+_QUOTA_FALLBACK_LABEL = "[SIGNAL SATURATED]"
+_API_FALLBACK_LABEL   = "[SIGNAL DISTORTED]"
 
 # CIXUS META-INTELLIGENCE PROMPT
 # The core personality of the game.
@@ -265,14 +442,8 @@ class AIOrchestrator:
         api_key = os.getenv("GEMINI_API_KEY")
         
         if not api_key:
-            # Fallback to Mock if no key
-            print("WARNING: GEMINI_API_KEY not found. Using Mock Cixus.")
-            return {
-                "commentary": "Signal weak. Cixus observes only static. [MOCK]",
-                "authority_change": 0,
-                "morale_impact": "LOW",
-                "enemy_reaction": "UNKNOWN"
-            }
+            print("[Cixus] No GEMINI_API_KEY — using offline fallback engine.")
+            return _tactic_fallback_judgment(action_intent, reputation)
 
         try:
             genai.configure(api_key=api_key)
@@ -343,21 +514,12 @@ class AIOrchestrator:
             )
 
             if is_quota:
-                print(f"WARNING: Gemini quota/rate-limit hit: {e}")
-                return {
-                    "commentary": _QUOTA_FALLBACK,
-                    "authority_change": 0,
-                    "morale_impact": "LOW",
-                    "enemy_reaction": "UNKNOWN"
-                }
+                print(f"[Cixus] Quota/rate-limit hit — offline fallback: {e}")
+                return _tactic_fallback_judgment(action_intent, reputation)
 
-            print(f"ERROR: Cixus Brain Failure: {e}")
-            return {
-                "commentary": _API_FALLBACK,
-                "authority_change": 0,
-                "morale_impact": "LOW",
-                "enemy_reaction": "UNKNOWN"
-            }
+            print(f"[Cixus] API error — offline fallback: {e}")
+            return _tactic_fallback_judgment(action_intent, reputation)
+
 
     @staticmethod
     async def generate_cinematic_prompt(war_summary: str) -> str:
