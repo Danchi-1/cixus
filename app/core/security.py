@@ -4,6 +4,10 @@ from sqlalchemy import select
 from datetime import date
 from app.db.base import get_db
 from app.models.quota import UsageQuota
+from app.api.v1.player import get_client_ip
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Config
 DAILY_REQUEST_LIMIT = 50 # Strict limit for MVP to save API keys
@@ -11,8 +15,9 @@ DAILY_REQUEST_LIMIT = 50 # Strict limit for MVP to save API keys
 async def check_rate_limit(request: Request, db: AsyncSession = Depends(get_db)):
     """
     Dependency to enforce daily quotas based on Client IP.
+    Uses get_client_ip() for consistent IP extraction across proxies and proxies.
     """
-    client_ip = request.client.host
+    client_ip = get_client_ip(request)
     today = date.today()
     
     # Check DB

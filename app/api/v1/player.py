@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from uuid import UUID
 from typing import Optional
 from pydantic import BaseModel
@@ -8,6 +9,9 @@ from app.db.base import get_db
 from app.models.player import Player
 from app.services.ai.narrator import narrator
 import random
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -90,7 +94,7 @@ async def identify_player(request: Request, body: IdentifyRequest = IdentifyRequ
     """
     try:
         ip = get_client_ip(request)
-        print(f"[identify] request from ip={ip!r}  stored_player_id={body.player_id!r}")
+        logger.info(f"[identify] request from ip={ip!r}  stored_player_id={body.player_id!r}")
 
         # ── 1. Lookup by stored player_id (primary — survives IP changes) ─────
         if body.player_id:
@@ -104,10 +108,10 @@ async def identify_player(request: Request, body: IdentifyRequest = IdentifyRequ
                         # First time we have an IP for this player — store it
                         existing.ip_address = ip
                     await db.commit()
-                    print(f"[identify] Found by player_id → {existing.username}")
+                    logger.info(f"[identify] Found by player_id → {existing.username}")
                     return _player_response(existing, returning=True)
             except (ValueError, Exception) as e:
-                print(f"[identify] player_id lookup failed: {e}")
+                logger.warning(f"[identify] player_id lookup failed: {e}")
                 # Fall through to IP lookup
 
         # ── 2. Lookup by IP address ───────────────────────────────────────────
@@ -117,35 +121,41 @@ async def identify_player(request: Request, body: IdentifyRequest = IdentifyRequ
             if existing:
                 existing.last_seen_ip = ip
                 await db.commit()
-                print(f"[identify] Found by IP → {existing.username}")
+                logger.info(f"[identify] Found by IP → {existing.username}")
                 return _player_response(existing, returning=True)
 
-        # ── 3. New player — generate callsign ─────────────────────────────────
-        username = generate_commander_name()
-        for _ in range(10):
-            name_taken = await db.execute(select(Player).where(Player.username == username))
-            if not name_taken.scalars().first():
-                break
+        # ── 3. New player — generate callsign with retry-on-collision ─────────
+        # Use try-except with IntegrityError instead of pre-check to avoid TOCTOU race condition
+        new_player = None
+        for attempt in range(10):
             username = generate_commander_name()
-
-        new_player = Player(
-            username=username,
-            ip_address=ip if ip != "unknown" else None,
-            last_seen_ip=ip if ip != "unknown" else None,
-            prelude_seen=True,
-        )
-        db.add(new_player)
-        await db.commit()
-        await db.refresh(new_player)
-        print(f"[identify] Created new player → {new_player.username} (ip={ip})")
+            try:
+                new_player = Player(
+                    username=username,
+                    ip_address=ip if ip != "unknown" else None,
+                    last_seen_ip=ip if ip != "unknown" else None,
+                    prelude_seen=True,
+                )
+                db.add(new_player)
+                await db.commit()
+                break
+            except IntegrityError:
+                await db.rollback()
+                if attempt == 9:
+                    logger.error(f"[identify] Failed to generate unique username after {attempt + 1} attempts")
+                    raise HTTPException(status_code=500, detail="Failed to create player identity")
+                logger.debug(f"[identify] Username collision for {username}, retry {attempt + 1}/10")
+        
+        if new_player:
+            await db.refresh(new_player)
+            logger.info(f"[identify] Created new player → {new_player.username} (ip={ip})")
 
         prelude_content = await narrator.generate_prelude(new_player.username)
 
         return _player_response(new_player, returning=False, prelude=prelude_content)
 
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        logger.exception(f"[identify] Unexpected error: {e}")
         await db.rollback()
         raise HTTPException(status_code=500, detail=f"Identity resolution failed: {str(e)}")
 

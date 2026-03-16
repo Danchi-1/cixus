@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException
 from app.core.security import check_rate_limit
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import SQLAlchemyError
 from uuid import UUID
 import uuid
 from datetime import datetime, timezone
+import logging
 
 from app.db.base import get_db
 from app.models.war import WarSession
@@ -18,6 +20,8 @@ from app.engine.simulation import SimulationEngine
 from app.services.ai import AIOrchestrator
 from app.services.ai.context_builder import ContextBuilder
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -170,6 +174,8 @@ async def submit_command(war_id: UUID, cmd: CommandRequest, db: AsyncSession = D
             raise HTTPException(status_code=404, detail="War not found")
             
         player = await db.get(Player, war.player_id)
+        if not player:
+            raise HTTPException(status_code=404, detail="Player not found")
         
         # 1. AI Parse Intent & Context
         game_command = await AIOrchestrator.parse_command_intent(cmd.content, {"player_authority": player.authority_points})
@@ -191,139 +197,133 @@ async def submit_command(war_id: UUID, cmd: CommandRequest, db: AsyncSession = D
         )
 
         
-        # 4. Update DB
-        war.current_state_snapshot = turn_result.new_snapshot.model_dump()
-        war.turn_count = turn_result.turn_id
-        
-        # 5. Log Action & Outcome (SitRep)
-        formatted_sitrep = f"Events: {', '.join(turn_result.events)}."
-        if turn_result.state_delta:
-             formatted_sitrep += f" Visuals: {turn_result.state_delta}"
-        
-        # Save SitRep Log
-        sitrep_log = SitRepLog(
-            war_id=war.id,
-            turn_id=war.turn_count,
-            text_content=formatted_sitrep,
-            structured_data={"events": turn_result.events, "delta": turn_result.state_delta},
-            visual_context=turn_result.state_delta
-        )
-        db.add(sitrep_log)
-        
-        judgment_context = ContextBuilder.build_judgment_context(
-            war, 
-            turn_result.new_snapshot, 
-            turn_result.events
-        )
-        
-        # 6. Cixus Judgment (The Judge)
-        judgment = await AIOrchestrator.get_cixus_judgment(
-            action_intent=game_command.model_dump(), 
-            sitrep=judgment_context,
-            reputation=dict(player.reputation or {})
-        )
-        
-        # 7. Apply Judgment
-        delta = judgment.get("authority_change", 0)
-        reason = judgment.get("commentary", "No comment.")
-        
-        # Update Player Authority
-        current_ap = player.authority_points or 100
-        player.authority_points = max(0, min(100, current_ap + delta))
+        # 4. Update DB with transaction safety
+        try:
+            war.current_state_snapshot = turn_result.new_snapshot.model_dump()
+            war.turn_count = turn_result.turn_id
+            
+            # 5. Log Action & Outcome (SitRep)
+            formatted_sitrep = f"Events: {', '.join(turn_result.events)}."
+            if turn_result.state_delta:
+                 formatted_sitrep += f" Visuals: {turn_result.state_delta}"
+            
+            # Save SitRep Log
+            sitrep_log = SitRepLog(
+                war_id=war.id,
+                turn_id=war.turn_count,
+                text_content=formatted_sitrep,
+                structured_data={"events": turn_result.events, "delta": turn_result.state_delta},
+                visual_context=turn_result.state_delta
+            )
+            db.add(sitrep_log)
+            
+            judgment_context = ContextBuilder.build_judgment_context(
+                war, 
+                turn_result.new_snapshot, 
+                turn_result.events
+            )
+            
+            # 6. Cixus Judgment (The Judge)
+            judgment = await AIOrchestrator.get_cixus_judgment(
+                action_intent=game_command.model_dump(), 
+                sitrep=judgment_context,
+                reputation=dict(player.reputation or {})
+            )
+            
+            # 7. Apply Judgment
+            delta = judgment.get("authority_change", 0)
+            reason = judgment.get("commentary", "No comment.")
+            
+            # Update Player Authority
+            current_ap = player.authority_points or 100
+            player.authority_points = max(0, min(100, current_ap + delta))
 
-        # ── 9. Authority level progression ────────────────────────────────────
-        LEVEL_THRESHOLDS = {2: 200, 3: 600, 4: 1200, 5: 2500}
-        leveled_up = False
-        new_level = player.authority_level or 1
-        if delta > 0:
-            player.total_ap_earned = (player.total_ap_earned or 0) + delta
-            for lvl, threshold in sorted(LEVEL_THRESHOLDS.items()):
-                if player.total_ap_earned >= threshold and new_level < lvl:
-                    new_level = lvl
-                    leveled_up = True
-            if leveled_up:
-                player.authority_level = new_level
+            # ── 9. Authority level progression ────────────────────────────────────
+            LEVEL_THRESHOLDS = {2: 200, 3: 600, 4: 1200, 5: 2500}
+            leveled_up = False
+            new_level = player.authority_level or 1
+            if delta > 0:
+                player.total_ap_earned = (player.total_ap_earned or 0) + delta
+                for lvl, threshold in sorted(LEVEL_THRESHOLDS.items()):
+                    if player.total_ap_earned >= threshold and new_level < lvl:
+                        new_level = lvl
+                        leveled_up = True
+                if leveled_up:
+                    player.authority_level = new_level
 
-        # ── 8. Derive reputation signals from this command ────────────────────
-        rep = dict(player.reputation or {})
-        intent = game_command.intent
-        ethical  = intent.ethical_weight if intent else "standard"
-        risk     = intent.risk_profile    if intent else "medium"
-        pattern  = (intent.primary_pattern or "").lower() if intent else ""
+            # ── 8. Derive reputation signals from this command ────────────────────
+            rep = dict(player.reputation or {})
+            intent = game_command.intent
+            ethical  = intent.ethical_weight if intent else "standard"
+            risk     = intent.risk_profile    if intent else "medium"
+            pattern  = (intent.primary_pattern or "").lower() if intent else ""
 
-        def _inc(trait, amount):
-            rep[trait] = round(min(1.0, rep.get(trait, 0.0) + amount), 3)
+            def _inc(trait, amount):
+                rep[trait] = round(min(1.0, rep.get(trait, 0.0) + amount), 3)
 
-        # Ethical stance
-        if ethical == "brutal":    _inc("Ruthless",  0.05)
-        elif ethical == "merciful": _inc("Merciful",  0.04)
+            # Ethical stance
+            if ethical == "brutal":    _inc("Ruthless",  0.05)
+            elif ethical == "merciful": _inc("Merciful",  0.04)
 
-        # Risk appetite
-        if risk == "high":   _inc("Reckless",   0.03)
-        elif risk == "low":  _inc("Calculated", 0.03)
+            # Risk appetite
+            if risk == "high":   _inc("Reckless",   0.03)
+            elif risk == "low":  _inc("Calculated", 0.03)
 
-        # Command pattern
-        if any(w in pattern for w in ("attack", "assault", "flank", "charge")):
-            _inc("Aggressive", 0.03)
-        if any(w in pattern for w in ("defend", "fortif", "hold", "retreat")):
-            _inc("Defensive",  0.03)
-        if any(w in pattern for w in ("ambush", "feint", "diversion", "encircle")):
-            _inc("Cunning",    0.04)
+            # Command pattern
+            if any(w in pattern for w in ("attack", "assault", "flank", "charge")):
+                _inc("Aggressive", 0.03)
+            if any(w in pattern for w in ("defend", "fortif", "hold", "retreat")):
+                _inc("Defensive",  0.03)
+            if any(w in pattern for w in ("ambush", "feint", "diversion", "encircle")):
+                _inc("Cunning",    0.04)
 
-        # Authority outcome
-        if delta > 0:  _inc("Decisive",  0.03)
-        elif delta < 0: _inc("Hesitant",  0.03)
+            # Authority outcome
+            if delta > 0:  _inc("Decisive",  0.03)
+            elif delta < 0: _inc("Hesitant",  0.03)
 
-        # General battlefield experience (every command)
-        _inc("Veteran", 0.01)
+            # General battlefield experience (every command)
+            _inc("Veteran", 0.01)
 
-        player.reputation = rep
+            player.reputation = rep
 
-        # Log Authority Change
-        auth_log = AuthorityLog(
-            war_id=war.id,
-            turn_id=war.turn_count,
-            delta=delta,
-            reason=reason,
-            context_snapshot=judgment_context
-        )
-        db.add(auth_log)
+            # Log Authority Change
+            auth_log = AuthorityLog(
+                war_id=war.id,
+                turn_id=war.turn_count,
+                delta=delta,
+                reason=reason,
+                context_snapshot=judgment_context
+            )
+            db.add(auth_log)
 
-        # Log Action
-        action_log = ActionLog(
-            war_id=war.id,
-            player_command_raw=cmd.content,
-            parsed_action=game_command.model_dump(),
-            outcome="SUCCESS",
-            state_delta=turn_result.state_delta,
-            cixus_evaluation=judgment
-        )
-        db.add(action_log)
-
-        # Stamp last activity time for authority decay tracking
-        war.last_command_at = datetime.now(timezone.utc)
-
-        await db.commit()
-
-        return {
-            "turn_id": turn_result.turn_id,
-            "instructions": [i.model_dump() for i in turn_result.instructions],
-            "cixus_judgment": judgment,
-            "new_state": war.current_state_snapshot,
-            "friction": friction.model_dump(),
-            "intent": game_command.intent.model_dump() if game_command.intent else None,
-            "meta_intent": game_command.meta_intent,
-            "sitrep": formatted_sitrep,
-            "reputation": rep,
-            "authority_points": player.authority_points,
-            "authority_level": player.authority_level,
-            "leveled_up": leveled_up,
-            "total_ap_earned": player.total_ap_earned,
-        }
+            # Log Action
+            action_log = ActionLog(
+                war_id=war.id,
+                player_command_raw=cmd.content,
+                parsed_action=game_command.model_dump(),
+                outcome="SUCCESS",
+                state_delta=turn_result.state_delta,
+                cixus_evaluation=judgment
+            )
+            db.add(action_log)
+            
+            # Commit all changes atomically
+            await db.commit()
+            logger.info(f"Command processed successfully for war {war_id}, turn {war.turn_count}")
+            
+        except SQLAlchemyError as e:
+            await db.rollback()
+            logger.error(f"Database error during command processing for war {war_id}: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail="Command processing failed due to database error")
+        except Exception as e:
+            await db.rollback()
+            logger.error(f"Unexpected error during command processing for war {war_id}: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail="Command processing failed")
+    except HTTPException:
+        raise
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Command Processing Failed: {str(e)}")
+        logger.exception(f"Outer exception in submit_command for war {war_id}: {e}")
+        raise HTTPException(status_code=500, detail="Command processing failed")
 
 @router.get("/{war_id}/state")
 async def get_state(war_id: UUID, db: AsyncSession = Depends(get_db)):
