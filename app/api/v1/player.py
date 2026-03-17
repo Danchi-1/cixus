@@ -146,9 +146,12 @@ async def identify_player(request: Request, body: IdentifyRequest = IdentifyRequ
                     raise HTTPException(status_code=500, detail="Failed to create player identity")
                 logger.debug(f"[identify] Username collision for {username}, retry {attempt + 1}/10")
         
-        if new_player:
-            await db.refresh(new_player)
-            logger.info(f"[identify] Created new player → {new_player.username} (ip={ip})")
+        if not new_player:
+            logger.error("[identify] Failed to create player after all retry attempts")
+            raise HTTPException(status_code=500, detail="Failed to create player identity")
+        
+        await db.refresh(new_player)
+        logger.info(f"[identify] Created new player → {new_player.username} (ip={ip})")
 
         prelude_content = await narrator.generate_prelude(new_player.username)
 
